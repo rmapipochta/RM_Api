@@ -1,0 +1,11 @@
+package rm_1.redmineapi.bean;
+
+public class AttachmentFactory {
+    public static Attachment create(Integer id) {
+        return new Attachment(id);
+    }
+
+    public static Attachment create() {
+        return new Attachment(null);
+    }
+}
