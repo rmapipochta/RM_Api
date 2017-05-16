@@ -87,7 +87,7 @@ import rm_1.redmineapi.bean.Tracker;
 
 /**
  *
- * @author Саня
+ * @author post
  */
 
 public class RM_1 extends Application {
@@ -238,7 +238,7 @@ public class RM_1 extends Application {
                     deferButton.setDisable(false);
                         }
                         catch(Exception ex){
-                            //if connectoin failed disable buttons
+                            //if connection failed disable buttons
                          startButton.setDisable(true);
                     finishButton.setDisable(true);
                     urlButton.setDisable(true);
@@ -342,7 +342,7 @@ public class RM_1 extends Application {
                                 showStage();
                             }
                         });
-                }
+                 }
                 }
 
                 @Override
@@ -445,14 +445,16 @@ public class RM_1 extends Application {
                              
                             if(selectedIssue!=0&&timeStartInWork!=0)
                             updateTableIssues();
-                            String messageShow="У вас "+String.valueOf(issues2.size())+" "+getNumEnding(issues2.size());
+                            if(issues2.size()>0){
+                                String messageShow="У вас "+String.valueOf(issues2.size())+" "+getNumEnding(issues2.size());
                                 javax.swing.SwingUtilities.invokeLater(() ->
-                                        trayIcon.displayMessage(
-                                                "Внимание",
-                                                messageShow, 
-                                                java.awt.TrayIcon.MessageType.INFO
-                                        )
+                                    trayIcon.displayMessage(
+                                        "Внимание",
+                                        messageShow, 
+                                        java.awt.TrayIcon.MessageType.INFO
+                                    )
                                 );
+                            }
                                 }
                                 }
                                 }
@@ -566,6 +568,7 @@ public void setTableIssues()
          Params params2 = new Params()
                             .add("set_filter", "1")
                             .add("assigned_to_id", String.valueOf(id))
+                           // .add("","spent_hours")
                             .add("tracker_id", trackerIdString)
                             .add("status_id", statusIdString);
 
@@ -733,7 +736,7 @@ public void setTableIssues()
                         VBox.setMargin(addComment, new Insets(-66.0,5.0,15.0,260.0));
                     else
                         VBox.setMargin(addComment, new Insets(-66.0,5.0,15.0,285.0));
-                
+               
                     addComment.setText("ОК");
                     commentsScroll.setContent(descriptionComments);
                     descriptionScroll.setContent(descriptionText);
@@ -750,7 +753,6 @@ public void setTableIssues()
                     VBox.setMargin(lbSpentHours, new Insets(5.0,5.0,5.0,5.0));
                     VBox.setMargin(tfSpentHours, new Insets(-5.0,5.0,15.0,5.0));
                     VBox.setMargin(addSpentHours, new Insets(-60.0,5.0,15.0,260.0));
-                    
                     
                     dialog.initModality(Modality.APPLICATION_MODAL);
                     dialog.initOwner(primaryStage);
@@ -1001,12 +1003,12 @@ public void setTableIssues()
                 //if control button was pressed open url of issue
                 if(event.isControlDown())
                 {
-                    getHostServices().showDocument(urlIssue);
-                    if(table.getSelectionModel().getSelectedItem().getSpentHoursCol().equals("Новая"))
+                    /*if(table.getSelectionModel().getSelectedItem().getSpentHoursCol().equals("Новая"))
                     {
                         changeIssueStatusFromNew(Integer.valueOf(table.getSelectionModel().getSelectedItem().getIdCol()));
                         updateTableIssues();
-                    }
+                    }*/
+                    getHostServices().showDocument(urlIssue);
                 }
                 
                }catch(NumberFormatException ex){
@@ -1040,11 +1042,13 @@ public void setTableIssues()
           urlButton.setOnAction((final ActionEvent e) -> {
               //if isset host url
               if(!uri.trim().isEmpty())
-                   getHostServices().showDocument(urlIssue);
-              if(table.getSelectionModel().getSelectedItem().getSpentHoursCol().equals("Новая"))
               {
-                  changeIssueStatusFromNew(Integer.valueOf(table.getSelectionModel().getSelectedItem().getIdCol()));
-                  updateTableIssues();
+                  /*if(table.getSelectionModel().getSelectedItem().getSpentHoursCol().equals("Новая"))
+                    {
+                        changeIssueStatusFromNew(Integer.valueOf(table.getSelectionModel().getSelectedItem().getIdCol()));
+                        updateTableIssues();
+                    }*/
+                  getHostServices().showDocument(urlIssue);
               }
         });
           //show window with connection info by press settingsButton
@@ -1060,7 +1064,6 @@ public void setTableIssues()
                deferButton.setDisable(true);
                settingsButton.setDisable(true);
                //if connection established and issue selected
-               //if((mgr!=null)&&(selectedIssue!=0))
                if((mgr!=null)&&(table.getSelectionModel().getSelectedItem()!=null))
                {
                    int idFinishedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
@@ -1188,7 +1191,23 @@ public void setTableIssues()
                           if(updateIssue.getStatusId()!=idStatusInWork)
                           {
                               updateIssue.setStatusId(idStatusInWork);
-                              
+                             
+                                for (int i = 0; i < table.getItems().size(); i++) {
+                                    if (Integer.valueOf(table.getItems().get(i).getIdCol()) == selectedIssue) {
+                                        if(table.getItems().get(i).getSpentHoursCol().equals("Новая")){
+                                            String spentHoursStringBuf=mgr.getIssueManager().getIssueById(selectedIssue).getSpentHours().toString();
+                                            spentHoursMap.replace(selectedIssue,spentHoursStringBuf);                             
+                                            rowList.get(i).setSpentHoursCol(spentHoursStringBuf);
+                                            priorityIdCol.setSortType(TableColumn.SortType.DESCENDING);
+                                            table.setItems(rowList);
+                                            table.getSortOrder().add(priorityIdCol);
+                                            updateTableIssues();
+                                        }
+                                        break;
+                                    }
+                                }
+                                    
+                                
                               mgr.getIssueManager().update(updateIssue);
                           }
                       } catch (RedmineException ex) {
@@ -1294,7 +1313,7 @@ public void setTableIssues()
             settingsButton.setDisable(false);
         });
         trackerButton.setOnAction((final ActionEvent e) -> {
-            if(mgr!=null)//&&(table.getSelectionModel().getSelectedItem()!=null))
+            if(mgr!=null)
             {
                 trackersStackPane = new StackPane();
                 try {
@@ -1305,7 +1324,6 @@ public void setTableIssues()
                     trackersStackPane.getChildren().add(selectTrackersButton);
                     StackPane.setAlignment(selectTrackersButton, Pos.BOTTOM_LEFT);
                     StackPane.setMargin(selectTrackersButton, new Insets(5.0,5.0,5.0,175.0)); 
-                    
                 
                     for (IssueStatus issueStatus : statusesList) {
                         checkboxStatuses.add(new CheckBox(issueStatus.getName()));
