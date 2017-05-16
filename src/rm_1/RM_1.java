@@ -6,7 +6,6 @@
 package rm_1;
 
 
-//import java.awt.event.MouseAdapter;
 import java.awt.event.MouseListener;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -38,11 +37,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javafx.application.Platform;
-//import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-//import javafx.event.EventHandler;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.CheckBox;
@@ -179,8 +176,8 @@ public class RM_1 extends Application {
     
     Map<Integer,String> spentHoursMap = new HashMap<>();
     
-    String trackerIdString="";//1|2|3|4|14";
-    String statusIdString="";//1|2|3|6|8|9|21|25|27|29";
+    String trackerIdString="";
+    String statusIdString="";
                             
         
       private void connectFunc() throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException{
@@ -345,11 +342,7 @@ public class RM_1 extends Application {
                                 showStage();
                             }
                         });
-                        //e -> Platform.runLater(this::showStage);
-                    
-                 //       Platform.runLater(showStage());
                 }
-                    //showStage();//throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
                 }
 
                 @Override
@@ -431,9 +424,8 @@ public class RM_1 extends Application {
                                 Params params2 = new Params()
                                         .add("set_filter", "1")
                                         .add("assigned_to_id", String.valueOf(id))
-                                        .add("tracker_id", trackerIdString)//"1|2|3|4|14")
-                                        .add("status_id", statusIdString);//"1|2|3|6|8|9|21|25|27");
-                                        //.add("status_id", "130");
+                                        .add("tracker_id", trackerIdString)
+                                        .add("status_id", statusIdString);
                               
                                 List<Issue> issues2=null;
                                 try {
@@ -457,7 +449,7 @@ public class RM_1 extends Application {
                                 javax.swing.SwingUtilities.invokeLater(() ->
                                         trayIcon.displayMessage(
                                                 "Внимание",
-                                                messageShow, //+ timeFormat.format(new Date()),
+                                                messageShow, 
                                                 java.awt.TrayIcon.MessageType.INFO
                                         )
                                 );
@@ -574,7 +566,6 @@ public void setTableIssues()
          Params params2 = new Params()
                             .add("set_filter", "1")
                             .add("assigned_to_id", String.valueOf(id))
-                           // .add("","spent_hours")
                             .add("tracker_id", trackerIdString)
                             .add("status_id", statusIdString);
 
@@ -671,7 +662,7 @@ public void setTableIssues()
         deferButton.setTooltip(new Tooltip("Отложить задачу"));
         finishButton.setTooltip(new Tooltip("Завершить задачу"));
         trackerButton.setTooltip(new Tooltip("Выбор отображаемых трекеров и статусов"));
-//
+
         //get OS
         boolean windowsSystem=((System.getProperty("os.name").indexOf("Windows")==-1)?false:true);
         if(!windowsSystem)table.setStyle("-fx-font-size:12px;");
@@ -742,7 +733,7 @@ public void setTableIssues()
                         VBox.setMargin(addComment, new Insets(-66.0,5.0,15.0,260.0));
                     else
                         VBox.setMargin(addComment, new Insets(-66.0,5.0,15.0,285.0));
-                    //addComment.setAlignment(Pos.BOTTOM_RIGHT);
+                
                     addComment.setText("ОК");
                     commentsScroll.setContent(descriptionComments);
                     descriptionScroll.setContent(descriptionText);
@@ -752,7 +743,6 @@ public void setTableIssues()
                     descriptionVbox.getChildren().add(addComment);
                     addSpentHours.setText("ОК");
                     tfSpentHours.setMaxWidth(240);
-                    //lbSpentHours.setMaxWidth(280);
                    
                     spentHoursVbox.getChildren().add(lbSpentHours);
                     spentHoursVbox.getChildren().add(tfSpentHours);
@@ -790,7 +780,7 @@ public void setTableIssues()
                     Scene spentHoursScene = new Scene(spentHoursVbox, 310, 80);
                     spentHours.setScene(spentHoursScene);
                     
-        //hide unnecessary colimns
+        //hide unnecessary columns
         spentHoursCol.setResizable(false);
         spentHoursCol.setMaxWidth(50);
         spentHoursCol.setMinWidth(50);
