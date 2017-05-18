@@ -275,7 +275,7 @@ public class RM_1 extends Application {
                             if(TimeUnit.MILLISECONDS.toMinutes(allTime)>=1)
                             {
                         long hours=TimeUnit.MILLISECONDS.toHours(allTime);
-                        long minutes=TimeUnit.MILLISECONDS.toMinutes(allTime)-TimeUnit.MINUTES.toMinutes(TimeUnit.MILLISECONDS.toHours(allTime));
+                        long minutes=TimeUnit.MILLISECONDS.toMinutes(allTime)-TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(allTime));
                     
                             int min=(int)Math.ceil((float)minutes/60*100);
                             String s=String.valueOf(hours)+"."+((min<10)?"0"+String.valueOf(min):String.valueOf(min));
@@ -1230,7 +1230,7 @@ public void setTableIssues()
                                   //get time
                                   long millis=System.currentTimeMillis()-timeStartInWork;
                                   long hours=TimeUnit.MILLISECONDS.toHours(millis);
-                                  long minutes=TimeUnit.MILLISECONDS.toMinutes(millis)-TimeUnit.MINUTES.toMinutes(TimeUnit.MILLISECONDS.toHours(millis));
+                                  long minutes=TimeUnit.MILLISECONDS.toMinutes(millis)-TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(millis));
                                   long seconds=TimeUnit.MILLISECONDS.toSeconds(millis)-TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis));
                                   
                                   String s = hours+":"+((minutes<10)?"0"+String.valueOf(minutes):minutes)+":"+((seconds<10)?"0"+String.valueOf(seconds):seconds);
