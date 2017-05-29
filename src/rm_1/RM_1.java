@@ -52,6 +52,8 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.RadioButton;
@@ -220,7 +222,11 @@ public class RM_1 extends Application {
     private URL imageLoc;
     private java.awt.Image image;
     private java.awt.TrayIcon trayIcon;
-      
+    private final ButtonType okButtonType = new ButtonType("ОК", ButtonBar.ButtonData.OK_DONE);
+    private final ButtonType cancelButtonType = new ButtonType("Отмена", ButtonBar.ButtonData.CANCEL_CLOSE);
+    private final TextInputDialog tiDialog = new TextInputDialog();
+        
+    
       private void connectFunc() throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException{
       if((!tfHost.getText().trim().isEmpty())&&(!tfKey.getText().trim().isEmpty()))
                     {
@@ -755,6 +761,7 @@ public class RM_1 extends Application {
         settingsButton.setDisable(dis);
         createButton.setDisable(dis);
         trackerButton.setDisable(dis);
+        projectsButton.setDisable(dis);
         if(dis)
         {
             pauseTimer();
@@ -884,9 +891,11 @@ private void writeToTrackersOut()
 
 @Override
     public void start(Stage primaryStage) throws FileNotFoundException, KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException, RedmineException {
-       handler = new FileHandler("logger.log", 1000000, 7);
+        tiDialog.getDialogPane().getButtonTypes().setAll(okButtonType, cancelButtonType);
+         
+        handler = new FileHandler("logger.log", 1000000, 7);
         handler.setFormatter(new SimpleFormatter());
-        
+
 //get OS
         boolean windowsSystem=((System.getProperty("os.name").contains("Windows")));
         if(windowsSystem){
@@ -1187,8 +1196,9 @@ private void writeToTrackersOut()
                             tab.setGraphic(tabALabel);
                             tabALabel.setOnMouseClicked((MouseEvent mouseEvent) -> {
                                 if (mouseEvent.getButton().equals(MouseButton.PRIMARY)) {
-                                    if (mouseEvent.getClickCount() == 2) {
-                                        TextInputDialog tiDialog = new TextInputDialog("Вкладка");
+                                    if (mouseEvent.getClickCount() == 2) {                                        
+                                        tiDialog.getEditor().setText("Вкладка");
+                                        tiDialog.getEditor().requestFocus();
                                         tiDialog.setTitle("Изменение названия вкладки");
                                         tiDialog.setHeaderText("Заполните поле ниже");
                                         tiDialog.setContentText("Введите название владки:");
@@ -1380,7 +1390,8 @@ private void writeToTrackersOut()
                 }
                 else if(event.isAltDown())
                 {
-                    TextInputDialog tiDialog = new TextInputDialog("00:01");
+                    tiDialog.getEditor().setText("00:01");
+                    tiDialog.getEditor().requestFocus();
                     tiDialog.setTitle(PROGRAM_NAME);
                     tiDialog.setHeaderText(null);
                     tiDialog.setContentText("Введите трудозатраты:");
@@ -1487,7 +1498,8 @@ private void writeToTrackersOut()
                            LOG.log(Level.SEVERE, null, ex);
                        }
                        issueIdSpentHours=selectedIssue;
-                       TextInputDialog tiDialog = new TextInputDialog("00:01");
+                       tiDialog.getEditor().setText("00:01");
+                       tiDialog.getEditor().requestFocus();
                         tiDialog.setTitle(PROGRAM_NAME);
                         tiDialog.setHeaderText(null);
                         tiDialog.setContentText("Хотите ввести дополнительные трудозатраты?");
@@ -1526,7 +1538,8 @@ private void writeToTrackersOut()
                            LOG.log(Level.SEVERE, null, ex);
                        }
                        issueIdSpentHours=idFinishedIssue;
-                       TextInputDialog tiDialog = new TextInputDialog("00:01");
+                       tiDialog.getEditor().setText("00:01");
+                       tiDialog.getEditor().requestFocus();
                         tiDialog.setTitle(PROGRAM_NAME);
                         tiDialog.setHeaderText(null);
                         tiDialog.setContentText("Введите трудозатраты:");
@@ -1556,7 +1569,8 @@ private void writeToTrackersOut()
                            LOG.log(Level.SEVERE, null, ex);
                        }
                        issueIdSpentHours=selectedIssue;
-                       TextInputDialog tiDialog = new TextInputDialog("00:01");
+                       tiDialog.getEditor().setText("00:01");
+                       tiDialog.getEditor().requestFocus();
                         tiDialog.setTitle(PROGRAM_NAME);
                         tiDialog.setHeaderText(null);
                         tiDialog.setContentText("Введите трудозатраты:");
@@ -1700,8 +1714,7 @@ private void writeToTrackersOut()
             }catch(NumberFormatException ex){
                 LOG.addHandler(handler);
                 LOG.log(Level.SEVERE, null, ex);
-            }
-     
+            }     
          disableButtons(false);
         });
         trackerButton.setOnAction((final ActionEvent e) -> {
@@ -1722,8 +1735,7 @@ private void writeToTrackersOut()
                     String bufTrackerIdString=trackerIdStringList.get(tabs.getSelectionModel().getSelectedIndex());
         
                     for (IssueStatus issueStatus : statusesList) {
-                        checkboxStatuses.add(new CheckBox(issueStatus.getName()));
-                 
+                        checkboxStatuses.add(new CheckBox(issueStatus.getName()));                
                         trackersStackPane.getChildren().add(checkboxStatuses.get(checkboxStatuses.size()-1));
                  
                      StackPane.setAlignment(checkboxStatuses.get(checkboxStatuses.size()-1), Pos.TOP_LEFT);
@@ -1775,7 +1787,6 @@ private void writeToTrackersOut()
             for (int i=0;i<checkboxTrackers.size();i++) {    
                 if(checkboxTrackers.get(i).selectedProperty().getValue())
                     {
-                
                         bufTrackerIdString+="|"+checkboxTrackers.get(i).getId();
                     }
                 }
@@ -1784,8 +1795,7 @@ private void writeToTrackersOut()
             
             for (int i=0;i<checkboxStatuses.size();i++) {    
                 if(checkboxStatuses.get(i).selectedProperty().getValue())
-                    {
-                 
+                    {                 
                         bufStatusIdString+="|"+checkboxStatuses.get(i).getId();
                     }
                 }
@@ -1813,7 +1823,8 @@ private void writeToTrackersOut()
              }
              else
              {
-            TextInputDialog tiDialog = new TextInputDialog("Задача");
+            tiDialog.getEditor().setText("Задача");
+            tiDialog.getEditor().requestFocus();
             tiDialog.setTitle("Новая задача");
             tiDialog.setHeaderText(null);
             tiDialog.setContentText("Введите название задачи:");
@@ -1833,25 +1844,18 @@ private void writeToTrackersOut()
                     
 //allow to use this certificate
                         KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
-                        trustStore.load(null, null);
-                        
+                        trustStore.load(null, null);                        
                         MySSLSocketFactory sf = new MySSLSocketFactory(trustStore);
-                        sf.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
-                        
+                        sf.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);                       
                         HttpParams params = new BasicHttpParams();
                         HttpProtocolParams.setVersion(params, HttpVersion.HTTP_1_1);
-                        HttpProtocolParams.setContentCharset(params, HTTP.UTF_8);
-                        
+                        HttpProtocolParams.setContentCharset(params, HTTP.UTF_8);                       
                         SchemeRegistry registry = new SchemeRegistry();
                         registry.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80));
-                        registry.register(new Scheme("https", sf, 443));
-                        
-                        ClientConnectionManager ccm = new ThreadSafeClientConnManager(params, registry);
-                        
+                        registry.register(new Scheme("https", sf, 443));                        
+                        ClientConnectionManager ccm = new ThreadSafeClientConnManager(params, registry);                       
                         HttpClient client = new DefaultHttpClient(ccm, params);
-
-                        StringEntity paramsEntity =new StringEntity("{\"issue\": {\"project_id\": "+idProject+",\"subject\": \""+name+"\", \"assigned_to_id\": "+String.valueOf(idCurrentUser)+", "+((!idSubproject.trim().isEmpty())?"\"parent_issue_id\":"+idSubproject:"")+"}}","UTF-8");
-                     
+                        StringEntity paramsEntity =new StringEntity("{\"issue\": {\"project_id\": "+idProject+",\"subject\": \""+name+"\", \"assigned_to_id\": "+String.valueOf(idCurrentUser)+", "+((!idSubproject.trim().isEmpty())?"\"parent_issue_id\":"+idSubproject:"")+"}}","UTF-8");                    
                         request.addHeader("Content-type", "application/json; charset=utf-8");
                         request.setEntity(paramsEntity);
              
@@ -1940,6 +1944,7 @@ private void writeToTrackersOut()
                 statusIdStringList.add("");
                 trackerIdStringList.add("");
                 nameTabsStringList.add("Вкладка "+(tabs.getTabs().size()+1));
+                writeToTrackersOut();
                 tab.setOnClosed((Event t) -> {
                     rowIssueList.remove(tabs.getSelectionModel().getSelectedIndex()+1);
                     statusIdStringList.remove(tabs.getSelectionModel().getSelectedIndex()+1);
@@ -1953,7 +1958,8 @@ private void writeToTrackersOut()
                 tabALabel.setOnMouseClicked((MouseEvent mouseEvent) -> {
                     if (mouseEvent.getButton().equals(MouseButton.PRIMARY)) {
                         if (mouseEvent.getClickCount() == 2) {
-                            TextInputDialog tiDialog = new TextInputDialog("Вкладка");
+                            tiDialog.getEditor().setText("Вкладка");
+                            tiDialog.getEditor().requestFocus();
                             tiDialog.setTitle("Изменение названия вкладки");
                             tiDialog.setHeaderText("Заполните поле ниже");
                             tiDialog.setContentText("Введите название владки:");
