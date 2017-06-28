@@ -1,16 +1,15 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
+
 package rm_1;
 
 
+import javafx.scene.text.Font;
 import java.awt.event.MouseListener;
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
@@ -18,6 +17,10 @@ import java.io.ObjectOutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
@@ -27,7 +30,6 @@ import java.security.cert.CertificateException;
 import rm_1.redmineapi.RedmineManager;
 import rm_1.redmineapi.RedmineManagerFactory;
 import rm_1.redmineapi.bean.Issue;
-
 import javafx.application.Application;
 import javafx.event.ActionEvent;
 import javafx.scene.Scene;
@@ -44,6 +46,7 @@ import java.util.logging.SimpleFormatter;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -67,6 +70,7 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.cell.PropertyValueFactory;
@@ -78,6 +82,9 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.text.Text;
+import javafx.scene.text.TextAlignment;
+import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.WindowEvent;
 import javax.imageio.ImageIO;
@@ -116,13 +123,14 @@ public class RM_1 extends Application {
     private final Alert alert = new Alert(AlertType.INFORMATION);
     private static final Logger LOG = Logger.getLogger(RM_1.class.getName());
     private Handler handler;      
-    private static final int ID_STATUS_IN_WORK=3;
-    private static final int ID_STATUS_NEW=2;
-    private static final int ID_STATUS_FINISHED=4;
-    private static final int ID_STATUS_DEFER=30;
-    private static final int ID_STATUS_VALUATION_SPENT_TIME=29;
-    private static final int ID_ACTIVITY_DEVELOPMENT=11;
-    private static final int ID_ACTIVITY_ENGINEERING=10;
+    private CustomizeClass custClass;
+    private int ID_STATUS_IN_WORK=0;//3;
+    private int ID_STATUS_NEW=0;//2;
+    private int ID_STATUS_FINISHED=0;//4;
+    private int ID_STATUS_DEFER=0;//30;
+    private int ID_STATUS_VALUATION_SPENT_TIME=0;//29;
+    private int ID_ACTIVITY_DEVELOPMENT=0;//11;
+    private int ID_ACTIVITY_ENGINEERING=0;//10;
     private static final String ICON_IMAGE_LOC =
             "http://icons.iconarchive.com/icons/scafer31000/bubble-circle-3/16/GameCenter-icon.png";
     private static final String PROGRAM_NAME= "QuestBook";
@@ -136,7 +144,7 @@ public class RM_1 extends Application {
     private Stage stage;//main stage of application
     private String urlIssue="";//url of selected issue
     // a timer allowing the tray icon to provide a periodic notification event.
-    private Timer notificationTimer;// = new Timer();
+    private Timer notificationTimer;
     private Timer workTimer = new Timer();
     private Issue issueByIdWithDescription;//issue which selected to view description and comments
     private String uri="";//url of host
@@ -165,8 +173,24 @@ public class RM_1 extends Application {
     private final VBox dialogVbox = new VBox(20);
     private final TextField tfHost=new TextField();
     private final TextField tfKey=new TextField();
+    private final TextField tfSIW=new TextField();
+    private final TextField tfSN=new TextField();
+    private final TextField tfSF=new TextField();
+    private final TextField tfSD=new TextField();
+    private final TextField tfSVSH=new TextField();
+    private final TextField tfAD=new TextField();
+    private final TextField tfAE=new TextField();
     private final Label lbHost=new Label("Хост");
     private final Label lbKey=new Label("Ключ");
+    private final Label lbStatusesText=new Label("Идентификаторы статусов задач");
+    private final Label lbSIW=new Label("В работе");
+    private final Label lbSN=new Label("Новая");
+    private final Label lbSF=new Label("Решена");
+    private final Label lbSD=new Label("Отложена");
+    private final Label lbSVSH=new Label("Оценка трудозатрат");
+    private final Label lbActivityText=new Label("Идентификаторы типов деятельности");
+    private final Label lbAD=new Label("Разработка");
+    private final Label lbAE=new Label("Проектирование");
     private final Button connectButton = new Button();
     private final Stage trackers = new Stage();//stage to view trackers and statuses
     private final List<CheckBox> checkboxTrackers = new ArrayList();
@@ -175,6 +199,9 @@ public class RM_1 extends Application {
     private List<Tracker> trackersList = null;
     private final Button selectTrackersButton = new Button();
     private StackPane trackersStackPane;   
+    private StackPane browserStackPane;   
+    private final Stage browserStage = new Stage();//stage to select browser
+    private final CheckBox defaultBrowserCheckBox = new CheckBox("По умолчанию");
     private final Stage projectStage = new Stage();//stage to select project
     private final TextField tfSubproject = new TextField();
     private final ToggleGroup projectsToggleGroup = new ToggleGroup();
@@ -208,10 +235,14 @@ public class RM_1 extends Application {
     private final Image projectsImage = new Image("images/project.png",30,30,false,false);
     private final Button projectsButton = new Button("",new ImageView(projectsImage));   
     private final Image pauseImage = new Image("images/pause.png",30,30,false,false);
+    private final Image browserImage = new Image("images/browser.png",30,30,false,false);
+    private final Button browserButton = new Button("",new ImageView(browserImage));   
     private final Label lbTime=new Label(""); 
     private final AnchorPane rootAnchorPane = new AnchorPane();
     private final TabPane tabs = new TabPane();
     private final Button addTabButton = new Button("+");
+    private final Button selectBrowserFileButton = new Button("Выбрать");
+    private final ToggleGroup selectBrowserToggleGroup = new ToggleGroup();
     private double sceneHeight=0,sceneWidth=0, sceneX=0, sceneY=0;
     private final Map<Integer,String> spentHoursMap = new HashMap<>();
     private String trackerIdString="";
@@ -225,7 +256,8 @@ public class RM_1 extends Application {
     private final ButtonType okButtonType = new ButtonType("ОК", ButtonBar.ButtonData.OK_DONE);
     private final ButtonType cancelButtonType = new ButtonType("Отмена", ButtonBar.ButtonData.CANCEL_CLOSE);
     private final TextInputDialog tiDialog = new TextInputDialog();
-        
+    private String selectedBrowser = "";
+    private boolean defaultBrowser = true;
     
       private void connectFunc() throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException{
       if((!tfHost.getText().trim().isEmpty())&&(!tfKey.getText().trim().isEmpty()))
@@ -307,8 +339,8 @@ public class RM_1 extends Application {
     private void addExtraSpentHours(String name){
        if((issueIdSpentHours!=0)&&(!name.trim().isEmpty())&&Float.parseFloat(name.replaceAll(",",".").replaceAll(":","."))>0)
        {
-           TimeEntry TE=new TimeEntry();
-           TE.setHours(Float.parseFloat(name.replaceAll(",",".").replaceAll(":",".")));
+           TimeEntry TE=new TimeEntry();          
+           TE.setHours(Float.parseFloat(convertMinutesToSpentHours(name)));
            TE.setIssueId(issueIdSpentHours);
            TE.setActivityId(ID_ACTIVITY_ENGINEERING); 
            try {
@@ -337,7 +369,7 @@ public class RM_1 extends Application {
                            long minutes=TimeUnit.MILLISECONDS.toMinutes(allTime)-TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(allTime));
 
                                int min=(int)Math.ceil((float)minutes/60*100);
-                               String s=String.valueOf(hours)+"."+((min<10)?"0"+String.valueOf(min):String.valueOf(min));
+                               String s=String.valueOf(hours)+"."+((min<10)?"0"+String.valueOf(min):String.valueOf(min));                               
                                Float f=Float.parseFloat(s);
                           //create timentry for selected issue and set spent time
                        TimeEntry TE=new TimeEntry();
@@ -346,15 +378,13 @@ public class RM_1 extends Application {
                        TE.setActivityId(ID_ACTIVITY_DEVELOPMENT);
                             try {
                                 mgr.getTimeEntryManager().createTimeEntry(TE);
-                                String spentHoursStringBuf=mgr.getIssueManager().getIssueById(selectedIssue).getSpentHours().toString();
+                                String spentHoursStringBuf=convertSpentHours(mgr.getIssueManager().getIssueById(selectedIssue).getSpentHours().toString());
                                 spentHoursMap.replace(selectedIssue,spentHoursStringBuf);
                                 for (int i = 0; i < table.getItems().size(); i++) {
-                                   if (Integer.valueOf(table.getItems().get(i).getIdCol()) == selectedIssue) {
-                                    //   rowList.get(i).setSpentHoursCol(spentHoursStringBuf);
+                                   if (Integer.valueOf(table.getItems().get(i).getIdCol()) == selectedIssue) {                                    
                                        rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).setSpentHoursCol(spentHoursStringBuf);
 
-                                       priorityIdCol.setSortType(TableColumn.SortType.DESCENDING);
-                                     //  table.setItems(rowList);
+                                       priorityIdCol.setSortType(TableColumn.SortType.DESCENDING);                                   
                                        table.setItems(rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()));
                                        table.getSortOrder().add(priorityIdCol);
                                        break;
@@ -458,7 +488,6 @@ public class RM_1 extends Application {
                 saveSpentHours();
                 workTimer.cancel();
                 pauseTimer();
-                //notificationTimer.cancel();
                 Platform.exit();
                 System.exit(0);
                 tray.remove(trayIcon);
@@ -534,6 +563,174 @@ public class RM_1 extends Application {
             };
         });
     }
+   private void multilineRowTheme()
+    {        
+        themeCol.setCellFactory((TableColumn<RowIssue, String> col) -> {
+        TableCell<RowIssue, String> cell = new TableCell<RowIssue, String>(){
+            Text text;
+        @Override
+                protected void updateItem(String item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (!isEmpty()) {
+                        text = new Text(getItem());
+                        text.setWrappingWidth(themeCol.getWidth());                        
+                        this.setWrapText(true);   
+                        setGraphic(text);
+                    }
+                }
+        };
+        cell.textProperty().bind(cell.itemProperty()); // in general might need to subclass TableCell and override updateItem(...) here
+        cell.setOnMouseClicked((MouseEvent event) -> {//set action for click on table (column - themeCol)
+            if (event.getButton() == MouseButton.SECONDARY) {//set action for right button click
+                //select Issue for Subsequent work
+                int indexRow = table.getSelectionModel().getSelectedIndex();
+                if(selectedIssue==0||timeStartInWork==0)
+                {
+                    selectedIssue=Integer.parseInt(table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString());
+                    markedIssue=table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
+                }
+                //open window with description and comments of issue
+                int issueId=Integer.parseInt(table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString());
+                try {
+                    issueByIdWithDescription = mgr.getIssueManager().getIssueById(issueId, Include.journals);
+                    String BufText="Описание:"+((issueByIdWithDescription.getDescription()!=null)?issueByIdWithDescription.getDescription():"");
+                    String BufComment="Комментарии:\n";
+                    StringBuilder msg = new StringBuilder();
+                    String buf;
+                    try{
+                        Collection<Journal> collectionJournals=issueByIdWithDescription.getJournals();
+                        List<Journal> listJournals = new ArrayList(collectionJournals);
+                        Comparator<Journal> comparatorJournals = 
+                            (Journal left, Journal right) -> left.getCreatedOn().compareTo(right.getCreatedOn());
+                        Collections.sort(listJournals, comparatorJournals);
+                        
+                        int countjrnl=1;
+                        for (Journal journal : listJournals) {
+                            try{
+                            if((journal.getNotes()!=null)&&(!journal.getNotes().trim().isEmpty()))
+                            {
+                                buf=journal.getNotes().trim().replaceAll("&ldquo;","\"").replaceAll("&rdquo;","\"").replaceAll("&nbsp;"," ").replaceAll("&quot;"," ").replaceAll("<p>","\n").replaceAll("<div>","\n").replaceAll("<br>","\n").replaceAll("(?s)<[^>]*>(\\s*<[^>]*>)*", " ");
+                                BufComment+=countjrnl+") "+((buf.charAt(0)=='\n')?buf.substring(1, buf.length()):buf.substring(0, buf.length()))+"\n";
+                                countjrnl++;
+                            }
+                            }catch(Exception ex){  
+                        LOG.addHandler(handler);        
+                        LOG.log(Level.SEVERE, null, ex);
+                    }
+                        }
+                    }catch(SecurityException ex){
+                        LOG.addHandler(handler);
+                        LOG.log(Level.SEVERE, null, ex);
+                    }
+                    //delete html markup
+                    BufText=BufText.replaceAll("&ldquo;","\"").replaceAll("&rdquo;","\"").replaceAll("&nbsp;"," ").replaceAll("&quot;"," ").replaceAll("<p>","\n").replaceAll("<div>","\n").replaceAll("<br>","\n").replaceAll("(?s)<[^>]*>(\\s*<[^>]*>)*", " ");
+                  
+                    //set text in textfields
+                    msg.append(BufText);
+                    
+                    descriptionText.setText(msg.toString());
+                    
+                    descriptionText.setWrapText(true);
+                    descriptionComments.setWrapText(true);
+                    descriptionText.setTextAlignment(TextAlignment.JUSTIFY);
+                    descriptionComments.setTextAlignment(TextAlignment.JUSTIFY);
+                    
+                    msg = new StringBuilder();
+                    msg.append(BufComment);
+                    descriptionComments.setText(msg.toString());
+                    tfNewComment.setText("");
+                    urlIssue=uri+"/issues/"+table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
+                } catch (RedmineException ex) {
+                    LOG.addHandler(handler);
+                    LOG.log(Level.SEVERE, null, ex);
+                }
+                //show window
+                description.show();
+                descriptionText.setMaxWidth(description.getWidth()-50);
+                descriptionComments.setMaxWidth(description.getWidth()-50);
+                description.widthProperty().addListener((ObservableValue<? extends Number> observableValue, Number oldSceneWidth, Number newSceneWidth) -> {
+                  descriptionText.setMaxWidth(description.getWidth()-50);
+                  descriptionComments.setMaxWidth(description.getWidth()-50);
+                });
+            }
+            else{//set action for left button click
+                try{
+           
+                     int indexRow;
+                    if(table.getSelectionModel().getSelectedItem()!=null){
+                //select Issue for Subsequent work
+                indexRow = table.getSelectionModel().getSelectedIndex();
+                }else{
+                        indexRow=cell.getIndex();
+                
+                        table.requestFocus();
+                        table.getSelectionModel().select(indexRow);
+                        table.getFocusModel().focus(indexRow);
+                    }
+                if(selectedIssue==0||timeStartInWork==0)
+                {
+                    selectedIssue=Integer.parseInt(table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString());
+                    markedIssue=table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
+                }
+                urlIssue=uri+"/issues/"+table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
+                //if control button was pressed open url of issue
+                if(event.isControlDown()||event.getClickCount() == 2)
+                {
+                    if((defaultBrowser)||(selectedBrowser.trim().isEmpty()))
+                        getHostServices().showDocument(urlIssue);
+                    else
+                         try {
+                             Runtime.getRuntime().exec(selectedBrowser+" "+urlIssue);                       
+                         } catch (IOException ex) {
+                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                         }
+                }
+                else if(event.isShiftDown())
+                {
+                    tiDialog.getEditor().setText("00:01");
+                    tiDialog.getEditor().requestFocus();
+                    tiDialog.setTitle(PROGRAM_NAME);
+                    tiDialog.setHeaderText(null);
+                    tiDialog.setContentText("Введите трудозатраты:");
+                                     
+                    Optional<String> result = tiDialog.showAndWait();
+                    result.ifPresent(name -> {
+                          if(!name.trim().isEmpty())
+                          {
+                              int idOfIssueWhereChangeSpentHours=Integer.valueOf(table.getSelectionModel().getSelectedItem().getIdCol());
+                                TimeEntry TE=new TimeEntry();                                
+                                TE.setHours(Float.parseFloat(convertMinutesToSpentHours(name)));
+                                TE.setIssueId(idOfIssueWhereChangeSpentHours);
+                                TE.setActivityId(ID_ACTIVITY_ENGINEERING); 
+                                try {
+                                     mgr.getTimeEntryManager().createTimeEntry(TE);
+                                     changeIssueStatusFromNew(idOfIssueWhereChangeSpentHours,ID_STATUS_VALUATION_SPENT_TIME, false);
+                     
+                                     String spentHoursStringBuf=mgr.getIssueManager().getIssueById(idOfIssueWhereChangeSpentHours).getSpentHours().toString();
+                                    spentHoursMap.replace(idOfIssueWhereChangeSpentHours,convertSpentHours(spentHoursStringBuf));
+                                    setTableIssues();
+                                    updateTableIssues();
+                                    } catch (RedmineException ex) {
+                                        alert.setTitle("Внимание");
+                                        alert.setHeaderText(null);
+                                        alert.setContentText("Трудозатраты не удалось сохранить!");
+                                        alert.showAndWait();
+                                        LOG.addHandler(handler);
+                                        LOG.log(Level.SEVERE, null, ex);
+                                    }
+                          }
+                    });
+                }
+                
+               }catch(NumberFormatException ex){
+                   LOG.addHandler(handler);
+                   LOG.log(Level.SEVERE, null, ex);
+               }
+            }
+        });
+        return cell ;
+        });
+    }
     //change color oin cell with selected item
     private void updateTableIssues()
     {
@@ -604,18 +801,14 @@ public class RM_1 extends Application {
                                 String bufTheme;
                                 for (Issue issue : issues) {
                                     if(issue.getAssigneeId()!=null) {
-                                        if (issue.getAssigneeId()==idCurrentUser) {
-                                             bufTheme=issue.getSubject();
-                                             for(int j=30;j<bufTheme.length();j+=30)
-                                             {
-                                                 for(int jj=j;jj>j-30;jj--)
-                                                     if(bufTheme.charAt(jj)==' ')
-                                                     {
-                                                         bufTheme=bufTheme.substring(0, jj) + "\n" + bufTheme.substring(jj+1, bufTheme.length());
-                                                         j=jj+1;
-                                                         break;
-                                                     }
-                                             }
+                                        if (issue.getAssigneeId()==idCurrentUser) {                                           
+                                            Text text = new Text(issue.getSubject());                                          
+                                            text.setFont(new Font(12));
+                                            text.setWrappingWidth(100.0);
+                                            
+                                            text.setTextAlignment(TextAlignment.JUSTIFY);
+                            
+                                         bufTheme=issue.getSubject();                                      
                                    
                                             try {
                                                 String spentHoursStringBuf=spentHoursMap.get(issue.getId());
@@ -631,6 +824,7 @@ public class RM_1 extends Application {
                                                         {
                                                             spentHoursStringBuf="Новая";
                                                         }
+                                                        spentHoursStringBuf=convertSpentHours(spentHoursStringBuf);
                                                     spentHoursMap.put(issue.getId(), spentHoursStringBuf);
                                                 }
                                                 bufRowList.add(new RowIssue(issue.getId().toString(),issue.getStatusName(),issue.getPriorityText(),bufTheme,spentHoursStringBuf,issue.getPriorityId().toString()));
@@ -655,7 +849,9 @@ public class RM_1 extends Application {
         table.setItems(bufRowList);
         table.getSortOrder().add(priorityIdCol);
         if(selectedRowIndex!=-1)
-            table.getSelectionModel().select(selectedRowIndex);           
+            table.getSelectionModel().select(selectedRowIndex);   
+        issues=null;
+        
     }
     private void changeIssueStatusFromNew(int idOfUpdatedIssue, int newIdStatus, boolean flag)
     {
@@ -666,7 +862,8 @@ public class RM_1 extends Application {
             updatedIssue.setStatusId(newIdStatus);
                            
             mgr.getIssueManager().update(updatedIssue);
-            String spentHoursStringBuf=updatedIssue.getSpentHours().toString();
+            String spentHoursStringBuf=convertSpentHours(updatedIssue.getSpentHours().toString());
+            
             spentHoursMap.replace(idOfUpdatedIssue, spentHoursStringBuf);
 
             for (int i = 0; i < table.getItems().size(); i++) {
@@ -702,7 +899,7 @@ public class RM_1 extends Application {
                         @Override
                         public void run() {
                             Platform.runLater(() -> {
-                                if((idCurrentUser!=0)&&(issues!=null))
+                                if((idCurrentUser!=0)&&(issuesAll!=null))
                                 {
                                 Params params2;
                             
@@ -720,11 +917,11 @@ public class RM_1 extends Application {
                                 }
                              
                                 if(issues2!=null)
-                                {
+                                {                                   
                               //compare received issues with initial issues
                                 if(!issuesAll.toString().equals(issues2.toString()))
                                 {
-                                 issues2.removeAll(issuesAll);
+                                 issues2.removeAll(issuesAll);                                 
                                  setTableIssues();
                              issuesAll.addAll(issues2);
                             if(selectedIssue!=0&&timeStartInWork!=0)
@@ -758,9 +955,10 @@ public class RM_1 extends Application {
         finishButton.setDisable(dis);
         urlButton.setDisable(dis);
         deferButton.setDisable(dis);
-        settingsButton.setDisable(dis);
+      //  settingsButton.setDisable(dis);
         createButton.setDisable(dis);
         trackerButton.setDisable(dis);
+        browserButton.setDisable(dis);
         projectsButton.setDisable(dis);
         if(dis)
         {
@@ -771,6 +969,98 @@ public class RM_1 extends Application {
             resumeTimer();
         }
     }
+    private boolean setConfigParams()
+    {
+        try{
+                    ID_STATUS_IN_WORK=Integer.valueOf(tfSIW.getText());
+                  }
+                  catch(NumberFormatException ex){
+                      ID_STATUS_IN_WORK=0;
+                  }
+                  try{
+                  ID_STATUS_NEW=Integer.valueOf(tfSN.getText());
+                  }
+                  catch(NumberFormatException ex){
+                      ID_STATUS_NEW=0;
+                  }
+                  try{
+                  ID_STATUS_FINISHED=Integer.valueOf(tfSF.getText());
+                  }
+                  catch(NumberFormatException ex){
+                      ID_STATUS_FINISHED=0;
+                  }
+                  try{
+                  ID_STATUS_DEFER=Integer.valueOf(tfSD.getText());
+                  }
+                  catch(NumberFormatException ex){
+                      ID_STATUS_DEFER=0;
+                  }
+                  try{
+                  ID_STATUS_VALUATION_SPENT_TIME=Integer.valueOf(tfSVSH.getText());
+                  }
+                  catch(NumberFormatException ex){
+                      ID_STATUS_VALUATION_SPENT_TIME=0;
+                  }
+                  try{
+                  ID_ACTIVITY_DEVELOPMENT=Integer.valueOf(tfAD.getText());
+                  }
+                  catch(NumberFormatException ex){
+                      ID_ACTIVITY_DEVELOPMENT=0;
+                  }
+                  try{
+                      ID_ACTIVITY_ENGINEERING=Integer.valueOf(tfAE.getText());
+                  }
+                  catch(NumberFormatException ex){
+                      ID_ACTIVITY_ENGINEERING=0;
+                  }
+                  custClass = new CustomizeClass(ID_STATUS_IN_WORK,ID_STATUS_NEW,
+                    ID_STATUS_FINISHED,ID_STATUS_DEFER,ID_STATUS_VALUATION_SPENT_TIME,
+                    ID_ACTIVITY_DEVELOPMENT, ID_ACTIVITY_ENGINEERING);
+                  try { 
+                      if(custClass!=null && custClass.isOk())
+                      {
+                        FileOutputStream fos = new FileOutputStream("config.out");
+                            try (ObjectOutputStream oos = new ObjectOutputStream(fos)) {
+                                oos.writeObject(custClass);
+                                oos.flush();
+                                return true;
+                            }
+                     catch (FileNotFoundException ex) {
+                        LOG.addHandler(handler);
+                        LOG.log(Level.SEVERE, null, ex);
+                    }
+                  }
+                  }catch (IOException ex) {
+                        LOG.addHandler(handler);
+                        LOG.log(Level.SEVERE, null, ex);
+                    }
+        return false;
+    }
+    private boolean getConfigParams() throws IOException
+    {
+        try {
+                        FileInputStream fis = new FileInputStream("config.out");
+                        ObjectInputStream oin = new ObjectInputStream(fis);
+                        custClass = (CustomizeClass) oin.readObject(); 
+                        if(custClass!=null && custClass.isOk())
+                        {
+                            ID_STATUS_IN_WORK=3;
+                            ID_STATUS_NEW=2;
+                            ID_STATUS_FINISHED=4;
+                            ID_STATUS_DEFER=30;
+                            ID_STATUS_VALUATION_SPENT_TIME=29;
+                            ID_ACTIVITY_DEVELOPMENT=11;
+                            ID_ACTIVITY_ENGINEERING=10;
+                            return true;
+                        }
+                        
+                        } catch (FileNotFoundException | ClassNotFoundException ex) { 
+                            LOG.addHandler(handler);
+                            LOG.log(Level.SEVERE, null, ex);
+                            return false;
+                    }
+        return false;
+    }
     private void updateAllSpentHours()
     {
     disableButtons(true);
@@ -778,7 +1068,7 @@ public class RM_1 extends Application {
     try {
         Params params2 = new Params()
             .add("set_filter", "1")
-            .add("assigned_to_id", String.valueOf(idCurrentUser));//mgr.getUserManager().getCurrentUser().getId()));
+            .add("assigned_to_id", String.valueOf(idCurrentUser));
 
     issuesAll = mgr.getIssueManager().getIssues(params2).getResults();
     String spentHoursStringBuf;
@@ -793,7 +1083,7 @@ public class RM_1 extends Application {
         {
             spentHoursStringBuf="Новая";
         }
-        spentHoursMap.put(issue.getId(),spentHoursStringBuf);
+        spentHoursMap.put(issue.getId(),convertSpentHours(spentHoursStringBuf));
     }
     } catch (RedmineException ex) {
         LOG.addHandler(handler);
@@ -826,9 +1116,10 @@ public class RM_1 extends Application {
                     }).forEachOrdered((rb) -> {
                         projectsToggleGroupVbox.getChildren().add(rb);
                     });
+                    
                     tfSubproject.setMaxWidth(140);
                     tfSubproject.setText(idSubproject);
-                    
+                    lbSubproject.setStyle("-fx-font-size:12px;");
                     lbSubproject.setText("Родительская задача");
                     selectProjectButton.setText("Применить");
                     projectsScroll.setContent(projectsToggleGroupVbox);
@@ -836,10 +1127,10 @@ public class RM_1 extends Application {
                     projectsVbox.getChildren().add(lbSubproject);
                     projectsVbox.getChildren().add(tfSubproject);
                     projectsVbox.getChildren().add(selectProjectButton);
-                    
+                 
                     VBox.setMargin(projectsScroll, new Insets(5.0,5.0,0.0,5.0));
                     VBox.setMargin(lbSubproject, new Insets(5.0,5.0,15.0,5.0));
-                    VBox.setMargin(tfSubproject, new Insets(-40.0,5.0,15.0,140.0));
+                    VBox.setMargin(tfSubproject, new Insets(-40.0,5.0,15.0,145.0));
                     VBox.setMargin(selectProjectButton, new Insets(-45.0,5.0,15.0,300.0));
                     
                     tfSubproject.textProperty().addListener((ObservableValue<? extends String> observable, String oldValue, String newValue) -> {
@@ -861,6 +1152,7 @@ public class RM_1 extends Application {
                         projectsScene = new Scene(projectsVbox, 400, 400);
                     if(projectStage.getScene()==null)
                         projectStage.setScene(projectsScene);
+                    projectsList.clear();
                     projectStage.setTitle("Проект, в который будут добавляться задачи");
                     projectStage.show();
                 } catch (RedmineException ex) {
@@ -888,9 +1180,73 @@ private void writeToTrackersOut()
                         LOG.log(Level.SEVERE, null, ex);
                     }        
 }
+private String convertSpentHours(String s)
+{
+    if(s.equals("Новая"))return s;
+    String min;
+    try{
+        min = s.substring(s.indexOf(".")+1);
+        if(min.length()!=0){
+        float minFloat=Float.parseFloat(s);
+        minFloat-=Math.floor(minFloat);        
+        int minInt = (int)Math.round(minFloat*60);
+        if(minInt>=60)
+        {
+            s=String.valueOf(Float.parseFloat(s)+1);
+            s=s.substring(0, s.indexOf("."))+":00";
+        }
+        else
+        {
+            s=s.substring(0, s.indexOf("."))+":"+((minInt<10)?"0":"")+String.valueOf(minInt);
+        }
+        
+        }
+        else
+            s=s.substring(0, s.indexOf("."))+":00";
+        
+    }catch(NumberFormatException ex){
+     LOG.addHandler(handler);
+     LOG.log(Level.SEVERE, null, ex);
+    }
 
+    return s;
+}
+private String convertMinutesToSpentHours(String s)
+{
+    if(!s.trim().isEmpty()&&Float.parseFloat(s.replaceAll(",",".").replaceAll(":","."))>0)
+        try{          
+            s = s.replaceAll(",",".").replaceAll(":",".");
+            if(s.contains(".")&&s.indexOf(".")!=s.length()-1)
+            {
+                Integer min = Integer.valueOf(s.substring(s.indexOf(".")+1));
+                if(s.indexOf(".")==s.length()-2)
+                {
+                    min*=10;
+                }
+                min = (int)Math.ceil((float)min/60*100);
+                if(min>99)
+                {
+                    s=String.valueOf(Float.parseFloat(s)+1);
+                    min=0;
+                }
+                s=s.substring(0, s.indexOf(".")+1)+((min<10)?"0":"")+String.valueOf(min);
+            }
+        }catch(NumberFormatException ex){
+         LOG.addHandler(handler);
+         LOG.log(Level.SEVERE, null, ex);
+        }
+
+    return s;
+}
+private static String readFile(String path, Charset encoding) 
+  throws IOException 
+{
+  byte[] encoded = Files.readAllBytes(Paths.get(path));
+  return new String(encoded, encoding);
+}
 @Override
     public void start(Stage primaryStage) throws FileNotFoundException, KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException, RedmineException {
+     
         tiDialog.getDialogPane().getButtonTypes().setAll(okButtonType, cancelButtonType);
          
         handler = new FileHandler("logger.log", 1000000, 7);
@@ -958,6 +1314,7 @@ private void writeToTrackersOut()
         deferButton.setTooltip(new Tooltip("Отложить задачу"));
         finishButton.setTooltip(new Tooltip("Завершить задачу"));
         trackerButton.setTooltip(new Tooltip("Выбор отображаемых трекеров и статусов"));
+        browserButton.setTooltip(new Tooltip("Выбор браузера для просмотра задач"));
         createButton.setTooltip(new Tooltip("Создать задачу"));
         projectsButton.setTooltip(new Tooltip("Выбрать проект, в который\n будут создаваться задачи"));
 
@@ -972,27 +1329,13 @@ private void writeToTrackersOut()
                         commentsScroll.setMinHeight(100);
                         commentsScroll.setMaxHeight(500);
                         addComment.setMaxWidth(35);
-                        themeCol.setMinWidth(210);
-                        themeCol.setMaxWidth(210);
+                        themeCol.setMinWidth(210);              
                         table.setMaxWidth(285);
                         StackPane.setMargin(table, new Insets(40.0,5.0,5.0,5.0));
-                        StackPane.setMargin(urlButton, new Insets(50.0,10.0,5.0,295.0));
-                        StackPane.setMargin(startButton, new Insets(90.0,10.0,5.0,295.0));
-                        StackPane.setMargin(finishButton, new Insets(130.0,10.0,5.0,295.0));
-                        StackPane.setMargin(deferButton, new Insets(170.0,10.0,5.0,295.0));
-                        StackPane.setMargin(trackerButton, new Insets(210.0,10.0,5.0,295.0));
-                        StackPane.setMargin(createButton, new Insets(250.0,10.0,5.0,295.0));
-                        StackPane.setMargin(projectsButton, new Insets(290.0,10.0,5.0,295.0));
-                        StackPane.setMargin(settingsButton, new Insets(10.0,5.0,5.0,295.0));
-                        StackPane.setMargin(lbTime, new Insets(10.0,10.0,10.0,10.0));
-                        lbHost.setMaxWidth(35);
+                        StackPane.setMargin(lbTime, new Insets(10.0,10.0,10.0,10.0));              
+                       
                         lbKey.setMaxWidth(35);
-                        tfHost.setMaxWidth(200);
-                        tfKey.setMaxWidth(200);
-                        lbHost.setMaxHeight(40);
-                        lbKey.setMaxHeight(40);
-                        tfHost.setMaxHeight(40);
-                        tfKey.setMaxHeight(40);
+                
                     }
                     else
                     {
@@ -1001,19 +1344,14 @@ private void writeToTrackersOut()
                         commentsScroll.setMinHeight(100);
                         commentsScroll.setMaxHeight(500);                
                         addComment.setMaxWidth(40);
-                        themeCol.setMinWidth(250);
-                        themeCol.setMaxWidth(250);
+                        themeCol.setMinWidth(250);             
                         table.setMaxWidth(325);
                         StackPane.setMargin(table, new Insets(40.0,5.0,5.0,5.0));
-                        StackPane.setMargin(urlButton, new Insets(50.0,10.0,5.0,335.0));
-                        StackPane.setMargin(startButton, new Insets(90.0,10.0,5.0,335.0));
-                        StackPane.setMargin(finishButton, new Insets(130.0,10.0,5.0,335.0));
-                        StackPane.setMargin(deferButton, new Insets(170.0,10.0,5.0,335.0));
-                        StackPane.setMargin(trackerButton, new Insets(210.0,10.0,5.0,335.0));
-                        StackPane.setMargin(createButton, new Insets(250.0,10.0,5.0,335.0));
-                        StackPane.setMargin(projectsButton, new Insets(290.0,10.0,5.0,335.0));
-                        StackPane.setMargin(settingsButton, new Insets(10.0,5.0,5.0,335.0));
-                        StackPane.setMargin(lbTime, new Insets(10.0,10.0,10.0,10.0));
+                        StackPane.setMargin(lbTime, new Insets(10.0,10.0,10.0,10.0));                        
+            
+                        lbKey.setMaxWidth(40);
+               
+                    }
                         lbHost.setMaxWidth(35);
                         lbKey.setMaxWidth(40);
                         tfHost.setMaxWidth(200);
@@ -1022,8 +1360,23 @@ private void writeToTrackersOut()
                         lbKey.setMaxHeight(40);
                         tfHost.setMaxHeight(40);
                         tfKey.setMaxHeight(40);
-                    }
-                    
+                        tfSIW.setMaxWidth(80);
+                        tfSN.setMaxWidth(80);
+                        tfSD.setMaxWidth(80);
+                        tfSF.setMaxWidth(80);
+                        tfSVSH.setMaxWidth(80);
+                        tfAD.setMaxWidth(80);
+                        tfAE.setMaxWidth(80);
+                    StackPane.setMargin(startButton, new Insets(30.0,5.0,5.0,20.0));
+                    StackPane.setMargin(urlButton, new Insets(70.0,5.0,5.0,20.0));                        
+                    StackPane.setMargin(finishButton, new Insets(110.0,5.0,5.0,20.0));
+                    StackPane.setMargin(deferButton, new Insets(150.0,5.0,5.0,20.0));
+                    StackPane.setMargin(createButton, new Insets(190.0,5.0,5.0,20.0));
+                    StackPane.setMargin(browserButton, new Insets(5.0,5.0,125.0,20.0));                        
+                    StackPane.setMargin(trackerButton, new Insets(5.0,5.0,85.0,20.0));                        
+                    StackPane.setMargin(projectsButton, new Insets(5.0,5.0,45.0,20.0));
+                    StackPane.setMargin(settingsButton, new Insets(5.0,5.0,5.0,20.0));
+                        
                     VBox.setMargin(descriptionScroll, new Insets(1.0,5.0,1.0,5.0));
                     VBox.setMargin(commentsScroll, new Insets(-17.0,5.0,0.0,5.0));
                     VBox.setMargin(tfNewComment, new Insets(-15.0,50.0,15.0,5.0));
@@ -1059,16 +1412,55 @@ private void writeToTrackersOut()
                     VBox.setMargin(lbKey, new Insets(20.0,5.0,5.0,25.0));
                     VBox.setMargin(tfHost, new Insets(-107.0,5.0,5.0,65.0));
                     VBox.setMargin(tfKey, new Insets(12.0,5.0,5.0,65.0));
+                    VBox.setMargin(lbStatusesText, new Insets(12.0,5.0,5.0,65.0));
+                    VBox.setMargin(lbSIW, new Insets(-20.0,5.0,5.0,25.0));
+                    VBox.setMargin(lbSN, new Insets(-20.0,5.0,5.0,25.0));
+                    VBox.setMargin(lbSF, new Insets(-20.0,5.0,5.0,25.0));
+                    VBox.setMargin(lbSD, new Insets(-20.0,5.0,5.0,25.0));
+                    VBox.setMargin(lbSVSH, new Insets(-20.0,5.0,5.0,25.0));
                     if(windowsSystem)
-                        VBox.setMargin(connectButton, new Insets(5.0,5.0,5.0,110.0));
+                        VBox.setMargin(lbActivityText, new Insets(-10.0,5.0,5.0,65.0));
                     else
-                        VBox.setMargin(connectButton, new Insets(5.0,5.0,5.0,100.0));
+                        VBox.setMargin(lbActivityText, new Insets(-10.0,5.0,5.0,35.0));
+                    VBox.setMargin(lbAD, new Insets(-20.0,5.0,5.0,25.0));
+                    VBox.setMargin(lbAE, new Insets(-20.0,5.0,5.0,25.0));
+                    VBox.setMargin(tfSIW, new Insets(-45.0,5.0,5.0,150.0));
+                    VBox.setMargin(tfSN, new Insets(-45.0,5.0,5.0,150.0));
+                    VBox.setMargin(tfSF, new Insets(-45.0,5.0,5.0,150.0));
+                    VBox.setMargin(tfSD, new Insets(-45.0,5.0,5.0,150.0));
+                    VBox.setMargin(tfSVSH, new Insets(-45.0,5.0,5.0,150.0));
+                    VBox.setMargin(tfAD, new Insets(-45.0,5.0,5.0,150.0));
+                    VBox.setMargin(tfAE, new Insets(-45.0,5.0,5.0,150.0));
+                    if(windowsSystem)
+                        VBox.setMargin(connectButton, new Insets(-10.0,5.0,5.0,110.0));
+                    else
+                        VBox.setMargin(connectButton, new Insets(-10.0,5.0,5.0,100.0));
                     dialogVbox.getChildren().add(lbHost);
                     dialogVbox.getChildren().add(lbKey);
                     dialogVbox.getChildren().add(tfHost);
                     dialogVbox.getChildren().add(tfKey);
+                    dialogVbox.getChildren().add(lbStatusesText);
+                    dialogVbox.getChildren().add(lbSIW);
+                    dialogVbox.getChildren().add(tfSIW);
+                    dialogVbox.getChildren().add(lbSN);
+                    dialogVbox.getChildren().add(tfSN);
+                    dialogVbox.getChildren().add(lbSF);
+                    dialogVbox.getChildren().add(tfSF);
+                    dialogVbox.getChildren().add(lbSD);
+                    dialogVbox.getChildren().add(tfSD);
+                    dialogVbox.getChildren().add(lbSVSH);
+                    dialogVbox.getChildren().add(tfSVSH);
+                    dialogVbox.getChildren().add(lbActivityText);
+                    dialogVbox.getChildren().add(lbAD);
+                    dialogVbox.getChildren().add(tfAD);
+                    dialogVbox.getChildren().add(lbAE);
+                    dialogVbox.getChildren().add(tfAE);
                     dialogVbox.getChildren().add(connectButton);
-                    Scene dialogScene = new Scene(dialogVbox, 300, 190);
+                    Scene dialogScene;
+                    if(windowsSystem)
+                        dialogScene = new Scene(dialogVbox, 300, 450);
+                    else
+                        dialogScene = new Scene(dialogVbox, 320, 450);
                     dialog.setScene(dialogScene);
                     Scene descriptionScene;
                     if(windowsSystem)
@@ -1089,6 +1481,10 @@ private void writeToTrackersOut()
         priorityCol.setVisible(false);
         priorityIdCol.setVisible(false);    
         idCol.setResizable(false);
+        statusCol.setResizable(false);
+        statusCol.setMaxWidth(0.0);
+        priorityCol.setResizable(false);
+        priorityCol.setMaxWidth(0.0);
         themeCol.setSortable(false);
         spentHoursCol.setSortable(false);
         idCol.setSortable(false);
@@ -1103,8 +1499,8 @@ private void writeToTrackersOut()
         rowList.add(new RowIssue("","","","","",""));
         table.setItems(rowList);
         table.getColumns().addAll(idCol, statusCol, priorityCol, themeCol, spentHoursCol, priorityIdCol);
-        themeCol.setResizable(false);
-        Label themeColHeaderLabel = new Label("                      Мои задачи                  ");
+        themeCol.setResizable(true);
+        Label themeColHeaderLabel = new Label("                   Мои задачи               ");
         themeColHeaderLabel.setOnMouseClicked((MouseEvent mouseEvent) -> {
                                 if (mouseEvent.getButton().equals(MouseButton.PRIMARY)) {
                                     if (mouseEvent.getClickCount() == 2) {
@@ -1117,9 +1513,7 @@ private void writeToTrackersOut()
                                         } catch (RedmineException ex) {
                                             LOG.addHandler(handler);
                                             LOG.log(Level.SEVERE, null, ex);
-                                        }
-
-                                        
+                                        }                               
                                         setTableIssues();
                                         updateTableIssues();
                                     }
@@ -1146,22 +1540,24 @@ private void writeToTrackersOut()
         root.getChildren().add(finishButton);
         root.getChildren().add(deferButton);
         root.getChildren().add(trackerButton);
+        root.getChildren().add(browserButton);
         root.getChildren().add(createButton);
         root.getChildren().add(projectsButton);
         root.getChildren().add(settingsButton);
         
         StackPane.setAlignment(table, Pos.BOTTOM_LEFT);
-        StackPane.setAlignment(lbTime, Pos.BOTTOM_RIGHT);
-        StackPane.setAlignment(urlButton, Pos.TOP_LEFT);
-        StackPane.setAlignment(startButton, Pos.TOP_LEFT);
-        StackPane.setAlignment(finishButton, Pos.TOP_LEFT);
-        StackPane.setAlignment(deferButton, Pos.TOP_LEFT);
-        StackPane.setAlignment(trackerButton, Pos.TOP_LEFT);
-        StackPane.setAlignment(createButton, Pos.TOP_LEFT);
-        StackPane.setAlignment(projectsButton, Pos.TOP_LEFT);
-        StackPane.setAlignment(settingsButton, Pos.TOP_LEFT);
+        StackPane.setAlignment(lbTime, Pos.TOP_RIGHT);
+        StackPane.setAlignment(urlButton, Pos.TOP_RIGHT);
+        StackPane.setAlignment(startButton, Pos.TOP_RIGHT);
+        StackPane.setAlignment(finishButton, Pos.TOP_RIGHT);
+        StackPane.setAlignment(deferButton, Pos.TOP_RIGHT);
+        StackPane.setAlignment(trackerButton, Pos.BOTTOM_RIGHT);
+        StackPane.setAlignment(browserButton, Pos.BOTTOM_RIGHT);
+        StackPane.setAlignment(createButton, Pos.TOP_RIGHT);
+        StackPane.setAlignment(projectsButton, Pos.BOTTOM_RIGHT);
+        StackPane.setAlignment(settingsButton, Pos.BOTTOM_RIGHT);
         
-         Tab tabMain = new Tab();
+        Tab tabMain = new Tab();
         tabMain.setText("Главная");
         tabMain.closableProperty().set(false);
         tabMain.setStyle("-fx-padding: 3 10 3 35;");
@@ -1234,13 +1630,32 @@ private void writeToTrackersOut()
                         cc = (ConnectClass) oin.readObject();
                         tfHost.setText(cc.getHost());
                         tfKey.setText(cc.getKey());
-                        connectFunc();
+                        if(getConfigParams())
+                            connectFunc();
+                        tfSIW.setText(String.valueOf(ID_STATUS_IN_WORK));
+                        tfSN.setText(String.valueOf(ID_STATUS_NEW));
+                        tfSF.setText(String.valueOf(ID_STATUS_FINISHED));
+                        tfSD.setText(String.valueOf(ID_STATUS_DEFER));
+                        tfSVSH.setText(String.valueOf(ID_STATUS_VALUATION_SPENT_TIME));
+                        tfAD.setText(String.valueOf(ID_ACTIVITY_DEVELOPMENT));
+                        tfAE.setText(String.valueOf(ID_ACTIVITY_ENGINEERING));
+                        
                         setHeightOfRowsLinux();
+                        
                         } catch (FileNotFoundException | ClassNotFoundException ex) { 
                             LOG.addHandler(handler);
-                        LOG.log(Level.SEVERE, null, ex);
+                            LOG.log(Level.SEVERE, null, ex);
                     }
-                     
+                        try{
+                            selectedBrowser=readFile("browser.out", StandardCharsets.UTF_8).trim();
+                            defaultBrowser = selectedBrowser.isEmpty();
+                        }
+                        catch(IOException ex){
+                            selectedBrowser="";
+                            defaultBrowser = true;
+                            LOG.addHandler(handler);
+                            LOG.log(Level.SEVERE, null, ex);
+                        }
                        //connect by enter press in connection window
                     dialogScene.setOnKeyPressed(event -> {
                         if (event.getCode() == KeyCode.ENTER) {
@@ -1251,188 +1666,18 @@ private void writeToTrackersOut()
                                 workTimer.cancel();
                                 //clear counter
                                 lbTime.setText("");
+                                if(setConfigParams())
                                 //connect to api
-                                connectFunc();
+                                {
+                                    connectFunc();
+                                    multilineRowTheme();
+                                }
                             } catch (KeyStoreException | IOException | NoSuchAlgorithmException | CertificateException | KeyManagementException | UnrecoverableKeyException ex) {
                                 LOG.addHandler(handler);
                                 LOG.log(Level.SEVERE, null, ex);
                             }
                         }
                     });
-
-    themeCol.setCellFactory((TableColumn<RowIssue, String> col) -> {
-        final TableCell<RowIssue, String> cell = new TableCell<>();
-        cell.textProperty().bind(cell.itemProperty()); // in general might need to subclass TableCell and override updateItem(...) here
-        cell.setOnMouseClicked((MouseEvent event) -> {//set action for click on table (column - themeCol)
-            if (event.getButton() == MouseButton.SECONDARY) {//set action for right button click
-                //select Issue for Subsequent work
-                int indexRow = table.getSelectionModel().getSelectedIndex();
-                if(selectedIssue==0||timeStartInWork==0)
-                {
-                    selectedIssue=Integer.parseInt(table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString());
-                    markedIssue=table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
-                }
-                //open window with description and comments of issue
-                int issueId=Integer.parseInt(table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString());
-                try {
-                    issueByIdWithDescription = mgr.getIssueManager().getIssueById(issueId, Include.journals);
-                    String BufText="Описание:"+issueByIdWithDescription.getDescription();
-                    String BufComment="Комментарии:\n";
-                    StringBuilder msg = new StringBuilder();
-                    String buf;
-                    try{
-                        Collection<Journal> collectionJournals=issueByIdWithDescription.getJournals();
-                        List<Journal> listJournals = new ArrayList(collectionJournals);
-                        Comparator<Journal> comparatorJournals = 
-                            (Journal left, Journal right) -> left.getCreatedOn().compareTo(right.getCreatedOn());
-                        Collections.sort(listJournals, comparatorJournals);
-                        
-                        int countjrnl=1;
-                        for (Journal journal : listJournals) {
-                            try{
-                            if((journal.getNotes()!=null)&&(!journal.getNotes().trim().isEmpty()))
-                            {
-                                buf=journal.getNotes().trim().replaceAll("&ldquo;","\"").replaceAll("&rdquo;","\"").replaceAll("&nbsp;"," ").replaceAll("&quot;"," ").replaceAll("<p>","\n").replaceAll("<div>","\n").replaceAll("<br>","\n").replaceAll("(?s)<[^>]*>(\\s*<[^>]*>)*", " ");
-                                BufComment+=countjrnl+") "+((buf.charAt(0)=='\n')?buf.substring(1, buf.length()):buf.substring(0, buf.length()))+"\n";
-                                countjrnl++;
-                            }
-                            }catch(Exception ex){  
-                        LOG.addHandler(handler);        
-                        LOG.log(Level.SEVERE, null, ex);
-                    }
-                        }
-                    }catch(SecurityException ex){
-                        LOG.addHandler(handler);
-                        LOG.log(Level.SEVERE, null, ex);
-                    }
-                    //delete html markup
-                    BufText=BufText.replaceAll("&ldquo;","\"").replaceAll("&rdquo;","\"").replaceAll("&nbsp;"," ").replaceAll("&quot;"," ").replaceAll("<p>","\n").replaceAll("<div>","\n").replaceAll("<br>","\n").replaceAll("(?s)<[^>]*>(\\s*<[^>]*>)*", " ");
-                    //split the string
-                    boolean fl=true;
-                    for(int j=45;j<BufText.length();j+=45)
-                    {
-                        for(int jj=j;jj>j-44;jj--)
-                            if(BufText.charAt(jj)=='\n')
-                            {
-                                j=jj+1;
-                                fl=false;
-                                break;
-                            }
-                        if(fl)
-                            for(int jj=j;jj>j-45;jj--)
-                                if(BufText.charAt(jj)==' ')
-                                {
-                                    BufText=BufText.substring(0, jj) + "\n" + BufText.substring(jj+1, BufText.length());
-                                    j=jj+1;
-                                    break;
-                                }
-                        fl=true;
-                    }
-                    for(int j=45;j<BufComment.length();j+=45)
-                    {
-                        for(int jj=j;jj>j-44;jj--)
-                            if(BufComment.charAt(jj)=='\n')
-                            {
-                                j=jj+1;
-                                fl=false;
-                                break;
-                            }
-                        if(fl)
-                            for(int jj=j;jj>j-45;jj--)
-                                if(BufComment.charAt(jj)==' ')
-                                {
-                                    BufComment=BufComment.substring(0, jj) + "\n" + BufComment.substring(jj+1, BufComment.length());
-                                    j=jj+1;
-                                    break;
-                                }
-                        fl=true;
-                    }
-                    //set text in textfields
-                    msg.append(BufText);
-                    descriptionText.setText(msg.toString());
-                    msg = new StringBuilder();
-                    msg.append(BufComment);
-                    descriptionComments.setText(msg.toString());
-                    tfNewComment.setText("");
-                    urlIssue=uri+"/issues/"+table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
-                } catch (RedmineException ex) {
-                    LOG.addHandler(handler);
-                    LOG.log(Level.SEVERE, null, ex);
-                }
-                //show window
-                description.show();
-                
-            }
-            else{//set action for left button click
-                try{
-           
-                     int indexRow;
-                    if(table.getSelectionModel().getSelectedItem()!=null){
-                //select Issue for Subsequent work
-                indexRow = table.getSelectionModel().getSelectedIndex();
-                }else{
-                        indexRow=cell.getIndex();
-                
-                        table.requestFocus();
-                        table.getSelectionModel().select(indexRow);
-                        table.getFocusModel().focus(indexRow);
-                    }
-                if(selectedIssue==0||timeStartInWork==0)
-                {
-                    selectedIssue=Integer.parseInt(table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString());
-                    markedIssue=table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
-                }
-                urlIssue=uri+"/issues/"+table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
-                //if control button was pressed open url of issue
-                if(event.isControlDown())
-                {
-                    getHostServices().showDocument(urlIssue);
-                }
-                else if(event.isAltDown())
-                {
-                    tiDialog.getEditor().setText("00:01");
-                    tiDialog.getEditor().requestFocus();
-                    tiDialog.setTitle(PROGRAM_NAME);
-                    tiDialog.setHeaderText(null);
-                    tiDialog.setContentText("Введите трудозатраты:");
-                                     
-                    Optional<String> result = tiDialog.showAndWait();
-                    result.ifPresent(name -> {
-                          if(!name.trim().isEmpty())
-                          {
-                              int idOfIssueWhereChangeSpentHours=Integer.valueOf(table.getSelectionModel().getSelectedItem().getIdCol());
-                                TimeEntry TE=new TimeEntry();
-                                TE.setHours(Float.parseFloat(name.replaceAll(",",".").replaceAll(":",".")));
-                                TE.setIssueId(idOfIssueWhereChangeSpentHours);
-                                TE.setActivityId(ID_ACTIVITY_ENGINEERING); 
-                                try {
-                                     mgr.getTimeEntryManager().createTimeEntry(TE);
-                                     changeIssueStatusFromNew(idOfIssueWhereChangeSpentHours,ID_STATUS_VALUATION_SPENT_TIME, false);
-                     
-                                     String spentHoursStringBuf=mgr.getIssueManager().getIssueById(idOfIssueWhereChangeSpentHours).getSpentHours().toString();
-                                    spentHoursMap.replace(idOfIssueWhereChangeSpentHours,spentHoursStringBuf);
-                                    setTableIssues();
-                                    updateTableIssues();
-                                    } catch (RedmineException ex) {
-                                        alert.setTitle("Внимание");
-                                        alert.setHeaderText(null);
-                                        alert.setContentText("Трудозатраты не удалось сохранить!");
-                                        alert.showAndWait();
-                                        LOG.addHandler(handler);
-                                        LOG.log(Level.SEVERE, null, ex);
-                                    }
-                          }
-                    });
-                }
-                
-               }catch(NumberFormatException ex){
-                   LOG.addHandler(handler);
-                   LOG.log(Level.SEVERE, null, ex);
-               }
-            }
-        });
-        return cell ;
-        });
         //add action for button OK in window with description of issue
     addComment.setOnAction((final ActionEvent e) -> {
         //if comment isset in textfield set note to issue
@@ -1518,10 +1763,11 @@ private void writeToTrackersOut()
                        
                        markedIssue="";
                        selectedIssue=0;
-                       //make all cells of table without background
-                       updateTableIssues();
                        //get updated issues from api and insert into table
                        setTableIssues();
+                       //make all cells of table without background
+                       updateTableIssues();
+                       multilineRowTheme();
                        lbTime.setText("");
                    }
                    else if((selectedIssue!=0)&&(timeStartInWork!=0)&&(selectedIssue!=idFinishedIssue)){
@@ -1553,6 +1799,7 @@ private void writeToTrackersOut()
                         });
                        setTableIssues();
                        updateTableIssues();
+                       multilineRowTheme();
                    }
                    //if issue not in work but also selected
                    else if((selectedIssue!=0)&&(timeStartInWork==0))
@@ -1586,11 +1833,12 @@ private void writeToTrackersOut()
                        markedIssue="";
                        //get updated issues from api and insert into table
                        setTableIssues();
+                       multilineRowTheme();
                    }  
                    try {
                Params params2 = new Params()
                             .add("set_filter", "1")
-                            .add("assigned_to_id", String.valueOf(idCurrentUser));//mgr.getUserManager().getCurrentUser().getId()));
+                            .add("assigned_to_id", String.valueOf(idCurrentUser));
               
                         issuesAll = mgr.getIssueManager().getIssues(params2).getResults();
                     } catch (RedmineException ex) {
@@ -1611,8 +1859,14 @@ private void writeToTrackersOut()
                   workTimer.cancel();
                   //clear counter
                   lbTime.setText("");
+                  //update id of statuses and activities
+                  if(setConfigParams())
+                  
                   //connect to api
-                  connectFunc();
+                  {
+                      connectFunc();
+                      multilineRowTheme();
+                  }
               } catch (KeyStoreException | IOException | NoSuchAlgorithmException | CertificateException | KeyManagementException | UnrecoverableKeyException ex) {
                   LOG.addHandler(handler);
                   LOG.log(Level.SEVERE, null, ex);
@@ -1717,6 +1971,119 @@ private void writeToTrackersOut()
             }     
          disableButtons(false);
         });
+        browserButton.setOnAction((final ActionEvent e) -> {
+            browserStackPane = new StackPane();
+            if(defaultBrowser||selectedBrowser.isEmpty())defaultBrowserCheckBox.setSelected(true);
+            else defaultBrowserCheckBox.setSelected(false);
+            browserStackPane.getChildren().add(defaultBrowserCheckBox);
+            defaultBrowserCheckBox.selectedProperty().addListener(new ChangeListener<Boolean>() {
+                public void changed(ObservableValue ov,Boolean old_val, Boolean new_val) {
+                    defaultBrowser = defaultBrowserCheckBox.isSelected();
+                    selectBrowserFileButton.setDisable(defaultBrowserCheckBox.isSelected());                    
+
+                    for(int i=0;i<selectBrowserToggleGroup.getToggles().size();i++)
+                    {
+                        RadioButton rb = (RadioButton)selectBrowserToggleGroup.getToggles().get(i);
+                        rb.setDisable(defaultBrowser);
+                    }
+                    if(defaultBrowser)
+                    {
+                        selectedBrowser="";
+                        try(FileWriter writer = new FileWriter("browser.out", false))
+                        {         
+                            writer.write("");
+                            writer.flush();
+                        }
+                        catch(IOException ex){
+                            LOG.addHandler(handler);
+                            LOG.log(Level.SEVERE, null, ex);
+                        }
+                    }
+                }
+            });
+         Scene browserScene;
+         StackPane.setAlignment(defaultBrowserCheckBox, Pos.TOP_LEFT);
+          StackPane.setMargin(defaultBrowserCheckBox, new Insets(15.0,5.0,5.0,5.0)); 
+            if(windowsSystem)
+            {
+                selectBrowserFileButton.setDisable(defaultBrowser);
+                browserStackPane.getChildren().add(selectBrowserFileButton);
+                
+                StackPane.setAlignment(selectBrowserFileButton, Pos.TOP_RIGHT);
+                StackPane.setMargin(selectBrowserFileButton, new Insets(10.0,5.0,5.0,5.0)); 
+               
+                    
+                selectBrowserFileButton.setOnAction((final ActionEvent ev) -> {
+                    FileChooser fileChooser = new FileChooser();
+                    FileChooser.ExtensionFilter extFilter = new FileChooser.ExtensionFilter("EXE files (*.exe)", "*.exe");
+                    fileChooser.getExtensionFilters().add(extFilter);
+                    // Show open file dialog
+                    File file = fileChooser.showOpenDialog(browserStage);
+                    if (file != null) {
+                        selectedBrowser = file.getPath();
+                        browserStage.hide();
+                        try(FileWriter writer = new FileWriter("browser.out", false))
+                        {
+                           //write browser in file                            
+                            writer.write(selectedBrowser);
+                            writer.flush();
+                        }
+                        catch(IOException ex){
+                            LOG.addHandler(handler);
+                            LOG.log(Level.SEVERE, null, ex);
+                        }
+                        //System.out.println(selectedBrowser);
+                    }
+                    
+                });
+                browserScene = new Scene(browserStackPane, 200, 50);
+            }
+            else
+            {
+                RadioButton rb = new RadioButton("Mozilla Firefox");
+                rb.setId("firefox");
+                if(rb.getId().equals(selectedBrowser))
+                    rb.setSelected(true);                
+                rb.setToggleGroup(selectBrowserToggleGroup);
+                browserStackPane.getChildren().add(rb);
+                StackPane.setAlignment(rb, Pos.TOP_LEFT);
+                StackPane.setMargin(rb, new Insets(70.0,5.0,5.0,5.0)); 
+                rb = new RadioButton("Chromium");
+                rb.setId("chromium-browser");
+                if(rb.getId().equals(selectedBrowser))
+                    rb.setSelected(true);
+                rb.setToggleGroup(selectBrowserToggleGroup);
+                browserStackPane.getChildren().add(rb);
+                StackPane.setAlignment(rb, Pos.TOP_LEFT);
+                StackPane.setMargin(rb, new Insets(120.0,5.0,5.0,5.0)); 
+                for(int i=0;i<selectBrowserToggleGroup.getToggles().size();i++)
+                    {
+                        rb = (RadioButton)selectBrowserToggleGroup.getToggles().get(i);
+                        rb.setDisable(defaultBrowser);
+                    }
+                selectBrowserToggleGroup.selectedToggleProperty().addListener((ObservableValue<? extends Toggle> ov, Toggle toggle, Toggle new_toggle) -> {
+                    if(selectBrowserToggleGroup.getSelectedToggle()!=null)
+                        {
+                            RadioButton chk = (RadioButton)selectBrowserToggleGroup.getSelectedToggle(); // Cast object to radio button
+                            selectedBrowser=chk.getId();                            
+                        }
+                     try(FileWriter writer = new FileWriter("browser.out", false))
+                        {
+                           //write browser in file                            
+                            writer.write(selectedBrowser);
+                            writer.flush();
+                        }
+                        catch(IOException ex){
+                            LOG.addHandler(handler);
+                            LOG.log(Level.SEVERE, null, ex);
+                        }
+                });
+            
+                browserScene = new Scene(browserStackPane, 200, 200);
+            }
+            browserStage.setScene(browserScene);                    
+            browserStage.show();
+        });
         trackerButton.setOnAction((final ActionEvent e) -> {
             if(mgr!=null)
             {
@@ -1775,6 +2142,9 @@ private void writeToTrackersOut()
                     LOG.addHandler(handler);
                     LOG.log(Level.SEVERE, null, ex);
                 }
+                statusesList.clear();
+                trackersList.clear();
+                    
                 Scene trackersScene = new Scene(trackersStackPane, 400, 600);
                 trackers.setScene(trackersScene);                    
                 trackers.show();
@@ -1803,8 +2173,7 @@ private void writeToTrackersOut()
                     bufStatusIdString=bufStatusIdString.substring(1,bufStatusIdString.length());
            
                 trackerIdStringList.set(tabs.getSelectionModel().getSelectedIndex(), bufTrackerIdString);
-                statusIdStringList.set(tabs.getSelectionModel().getSelectedIndex(), bufStatusIdString);
-                //nameTabsStringList.set(tabs.getSelectionModel().getSelectedIndex(), tabs.getSelectionModel().getSelectedItem().getText());
+                statusIdStringList.set(tabs.getSelectionModel().getSelectedIndex(), bufStatusIdString);                
                 writeToTrackersOut();
                 
                     checkboxTrackers.clear();
@@ -1855,28 +2224,28 @@ private void writeToTrackersOut()
                         registry.register(new Scheme("https", sf, 443));                        
                         ClientConnectionManager ccm = new ThreadSafeClientConnManager(params, registry);                       
                         HttpClient client = new DefaultHttpClient(ccm, params);
-                        StringEntity paramsEntity =new StringEntity("{\"issue\": {\"project_id\": "+idProject+",\"subject\": \""+name+"\", \"assigned_to_id\": "+String.valueOf(idCurrentUser)+", "+((!idSubproject.trim().isEmpty())?"\"parent_issue_id\":"+idSubproject:"")+"}}","UTF-8");                    
+                        StringEntity paramsEntity =new StringEntity("{\"issue\": {\"project_id\": "+idProject+",\"subject\": \""+name+"\", \"assigned_to_id\": "+String.valueOf(idCurrentUser)+((!idSubproject.trim().isEmpty())?", \"parent_issue_id\":"+idSubproject:"")+"}}","UTF-8");                    
                         request.addHeader("Content-type", "application/json; charset=utf-8");
                         request.setEntity(paramsEntity);
              
                         HttpResponse response = client.execute(request);
-                        alert.setTitle("Внимание");
-                        alert.setHeaderText(null);
+                        
                         if(response.getStatusLine().getStatusCode()!=201)
                         {
+                            alert.setTitle("Внимание");
+                            alert.setHeaderText(null);
                             alert.setContentText("Не удалось создать задачу!");
                             alert.showAndWait();
                         }
                         else
                         {
-                            alert.setContentText("Задача была успешно создана!");
-                            alert.showAndWait();
+                           
                             setTableIssues();
                                 if(!markedIssue.trim().isEmpty()&&timeStartInWork!=0)
                                     updateTableIssues();
                                 Params params2 = new Params()
                                     .add("set_filter", "1")
-                                    .add("assigned_to_id", String.valueOf(idCurrentUser));//mgr.getUserManager().getCurrentUser().getId()));
+                                    .add("assigned_to_id", String.valueOf(idCurrentUser));
 
                             try {
                                 issuesAll = mgr.getIssueManager().getIssues(params2).getResults();
@@ -1913,6 +2282,7 @@ private void writeToTrackersOut()
                         SizesPositionClass spc = (SizesPositionClass) oin.readObject();
                         sceneWidth=spc.getWidth();
                         sceneHeight=spc.getHeight();
+                        
                         sceneX=spc.getX();
                         sceneY=spc.getY();
                         } catch (FileNotFoundException | ClassNotFoundException ex) {    
@@ -1999,12 +2369,32 @@ private void writeToTrackersOut()
 
         root.getChildren().add(rootAnchorPane);
         scene= new Scene(root, sceneWidth, sceneHeight);
-
+        scene.widthProperty().addListener((ObservableValue<? extends Number> observableValue, Number oldSceneWidth, Number newSceneWidth) -> {            
+          double newWidth = newSceneWidth.intValue()-60-(!windowsSystem?10:0);
+          table.setMaxWidth(newWidth);         
+          table.setMinWidth(newWidth);         
+          themeCol.setMaxWidth(newWidth-75);
+          themeCol.setMinWidth(newWidth-75);
+          tabs.setMaxWidth(newWidth);
+          tabs.setMinWidth(newWidth);
+          
+          multilineRowTheme();
+        });
+                    
         scene.setFill(Color.TRANSPARENT);
         stage.setX(sceneX);
         stage.setY(sceneY);
         stage.setTitle(PROGRAM_NAME);
         stage.setScene(scene);
+        double newWidth = sceneWidth-60-(!windowsSystem?10:0);
+        table.setMaxWidth(newWidth);         
+        table.setMinWidth(newWidth);         
+        themeCol.setMaxWidth(newWidth-75);
+        themeCol.setMinWidth(newWidth-75);
+        tabs.setMaxWidth(newWidth);
+        tabs.setMinWidth(newWidth);
+        multilineRowTheme();
+        
         stage.setOnCloseRequest((WindowEvent we) -> {
        
             sceneWidth=stage.getWidth();
@@ -2019,7 +2409,6 @@ private void writeToTrackersOut()
              
             }
         });
-
       
     }
 
