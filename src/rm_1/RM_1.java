@@ -237,6 +237,8 @@ public class RM_1 extends Application {
     private final Image pauseImage = new Image("images/pause.png",30,30,false,false);
     private final Image browserImage = new Image("images/browser.png",30,30,false,false);
     private final Button browserButton = new Button("",new ImageView(browserImage));   
+    private final Image stopImage = new Image("images/stop.png",30,30,false,false);
+    private final Button stopButton = new Button("",new ImageView(stopImage));   
     private final Label lbTime=new Label(""); 
     private final AnchorPane rootAnchorPane = new AnchorPane();
     private final TabPane tabs = new TabPane();
@@ -957,6 +959,7 @@ public class RM_1 extends Application {
         deferButton.setDisable(dis);
       //  settingsButton.setDisable(dis);
         createButton.setDisable(dis);
+        stopButton.setDisable(dis);
         trackerButton.setDisable(dis);
         browserButton.setDisable(dis);
         projectsButton.setDisable(dis);
@@ -1213,7 +1216,7 @@ private String convertSpentHours(String s)
 }
 private String convertMinutesToSpentHours(String s)
 {
-    if(!s.trim().isEmpty()&&Float.parseFloat(s.replaceAll(",",".").replaceAll(":","."))>0)
+    if(!s.trim().isEmpty()&&Float.parseFloat(s.replaceAll(",",".").replaceAll(":","."))>=0)
         try{          
             s = s.replaceAll(",",".").replaceAll(":",".");
             if(s.contains(".")&&s.indexOf(".")!=s.length()-1)
@@ -1316,6 +1319,7 @@ private static String readFile(String path, Charset encoding)
         trackerButton.setTooltip(new Tooltip("Выбор отображаемых трекеров и статусов"));
         browserButton.setTooltip(new Tooltip("Выбор браузера для просмотра задач"));
         createButton.setTooltip(new Tooltip("Создать задачу"));
+        stopButton.setTooltip(new Tooltip("Экстренная остановка"));
         projectsButton.setTooltip(new Tooltip("Выбрать проект, в который\n будут создаваться задачи"));
 
         if(!windowsSystem)table.setStyle("-fx-font-size:12px;");
@@ -1372,6 +1376,7 @@ private static String readFile(String path, Charset encoding)
                     StackPane.setMargin(finishButton, new Insets(110.0,5.0,5.0,20.0));
                     StackPane.setMargin(deferButton, new Insets(150.0,5.0,5.0,20.0));
                     StackPane.setMargin(createButton, new Insets(190.0,5.0,5.0,20.0));
+                    StackPane.setMargin(stopButton, new Insets(230.0,5.0,5.0,20.0));
                     StackPane.setMargin(browserButton, new Insets(5.0,5.0,125.0,20.0));                        
                     StackPane.setMargin(trackerButton, new Insets(5.0,5.0,85.0,20.0));                        
                     StackPane.setMargin(projectsButton, new Insets(5.0,5.0,45.0,20.0));
@@ -1542,6 +1547,7 @@ private static String readFile(String path, Charset encoding)
         root.getChildren().add(trackerButton);
         root.getChildren().add(browserButton);
         root.getChildren().add(createButton);
+        root.getChildren().add(stopButton);
         root.getChildren().add(projectsButton);
         root.getChildren().add(settingsButton);
         
@@ -1554,6 +1560,7 @@ private static String readFile(String path, Charset encoding)
         StackPane.setAlignment(trackerButton, Pos.BOTTOM_RIGHT);
         StackPane.setAlignment(browserButton, Pos.BOTTOM_RIGHT);
         StackPane.setAlignment(createButton, Pos.TOP_RIGHT);
+        StackPane.setAlignment(stopButton, Pos.TOP_RIGHT);
         StackPane.setAlignment(projectsButton, Pos.BOTTOM_RIGHT);
         StackPane.setAlignment(settingsButton, Pos.BOTTOM_RIGHT);
         
@@ -1923,11 +1930,11 @@ private static String readFile(String path, Charset encoding)
                       button.setGraphic(new ImageView(pauseImage));
                       button.setTooltip(new Tooltip("Остановить таймер"));
                   } else { //if issue already started in this program
-                    
+               
                       //stop timer
                       workTimer.cancel();
-                      //clear counter
-                      lbTime.setText("");
+                      
+                      //lbTime.setText("");
                       //save time spent on this issue
                       saveSpentHours();
                       timeStartInWork=0;
@@ -1937,6 +1944,7 @@ private static String readFile(String path, Charset encoding)
                       button.setTooltip(new Tooltip("Запусить задачу"));
                       //update timer
                       workTimer = new Timer();
+                      //clear counter
                       lbTime.setText("");
                       markedIssue="";
                       //make all backgrounds of cells to none
@@ -2265,6 +2273,85 @@ private static String readFile(String path, Charset encoding)
             });
             }
         }
+        });
+        stopButton.setOnAction((final ActionEvent e) -> {
+            disableButtons(true);
+            if ((mgr!=null)&&(selectedIssue!=0)&&(timeStartInWork!=0)) {
+                 
+                tiDialog.getEditor().setText("00:01");
+                tiDialog.getEditor().requestFocus();
+                long millis=System.currentTimeMillis()-timeStartInWork;
+                long hours=TimeUnit.MILLISECONDS.toHours(millis);
+                long minutes=TimeUnit.MILLISECONDS.toMinutes(millis)-TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(millis));
+                long seconds=TimeUnit.MILLISECONDS.toSeconds(millis)-TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis));
+                                
+                String s = hours+":"+((minutes<10)?"0"+String.valueOf(minutes):minutes)+":"+((seconds<10)?"0"+String.valueOf(seconds):seconds);
+        
+                if(s.length()<=8)
+                    tiDialog.setTitle("Таймер был запущен в течении "+s);
+                else
+                    tiDialog.setTitle("Таймер был запущен и не остановлен");
+
+                tiDialog.setHeaderText(null);
+                try {
+                    tiDialog.setContentText("Введите действительные трудозатраты по задаче: \n"+mgr.getIssueManager().getIssueById(selectedIssue).getSubject());
+                } catch (RedmineException ex) {
+                    Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                }
+                tiDialog.setWidth(600);
+                 
+                Optional<String> result = tiDialog.showAndWait();
+                result.ifPresent(name -> {
+                    if(!name.trim().isEmpty())
+                    {
+                        //останавливаем задачу и записываем трудозатраты введенные пользователем
+                       //stop timer
+                      workTimer.cancel();
+                      timeStartInWork=0;
+                      markedIssue="";
+                      
+                      float timeEntryBuf=Float.parseFloat(convertMinutesToSpentHours(name));
+                      if(timeEntryBuf>0){
+                      TimeEntry TE=new TimeEntry(); 
+                      TE.setHours(timeEntryBuf);
+                      TE.setIssueId(selectedIssue);
+                      TE.setActivityId(ID_ACTIVITY_ENGINEERING); 
+                                try {
+                                     mgr.getTimeEntryManager().createTimeEntry(TE);
+                                    
+                                     String spentHoursStringBuf=mgr.getIssueManager().getIssueById(selectedIssue).getSpentHours().toString();
+                                    spentHoursMap.replace(selectedIssue,convertSpentHours(spentHoursStringBuf));
+                                    setTableIssues();
+                                    
+                                    } catch (RedmineException ex) {
+                                        alert.setTitle("Внимание");
+                                        alert.setHeaderText(null);
+                                        alert.setContentText("Трудозатраты не удалось сохранить!");
+                                        alert.showAndWait();
+                                        LOG.addHandler(handler);
+                                        LOG.log(Level.SEVERE, null, ex);
+                                    }
+                      }
+                      updateTableIssues();
+                        //update timer
+                      workTimer = new Timer();
+                      //clear counter
+                      lbTime.setText("");
+                      startButton.setGraphic(new ImageView(startImage));
+                      startButton.setTooltip(new Tooltip("Запустить задачу"));
+                       
+                    
+                      //select issue which selected now
+                      try{
+                          if(table.getSelectionModel().getSelectedItem()!=null)
+                          selectedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+                      }catch(NumberFormatException ex){
+                          selectedIssue=0;
+                      }
+                    }
+                });
+            }
+            disableButtons(false);
         });
         projectsButton.setOnAction((final ActionEvent e) -> {
           showProjectStage();  
