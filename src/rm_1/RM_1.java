@@ -14,6 +14,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.ProtocolException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -27,6 +30,9 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import rm_1.redmineapi.RedmineManager;
 import rm_1.redmineapi.RedmineManagerFactory;
 import rm_1.redmineapi.bean.Issue;
@@ -58,9 +64,12 @@ import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.RadioButton;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Separator;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TableCell;
@@ -80,6 +89,8 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Text;
@@ -88,6 +99,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.WindowEvent;
 import javax.imageio.ImageIO;
+import javax.swing.JFrame;
 import org.apache.http.HttpResponse;
 import rm_1.redmineapi.RedmineException;
 import org.apache.http.HttpVersion;
@@ -161,7 +173,7 @@ public class RM_1 extends Application {
     private final TableColumn<RowIssue, String> spentHoursCol = new TableColumn("");//row with author
     private final TableColumn<RowIssue, String> priorityIdCol = new TableColumn("Приоритет номер");//row with priority id. need to sort
     private final ObservableList<RowIssue> rowList = FXCollections.observableArrayList(); 
-    private final Stage description = new Stage();//stage to view description and comments
+    private final Stage descriptionStage = new Stage();//stage to view description and comments
     private final VBox descriptionVbox = new VBox(20);
     private final Label descriptionText=new Label();
     private final Label descriptionComments=new Label();
@@ -169,9 +181,27 @@ public class RM_1 extends Application {
     private final Button addComment = new Button();
     private final ScrollPane commentsScroll = new ScrollPane();
     private final ScrollPane descriptionScroll = new ScrollPane();
-    private final Stage dialog = new Stage();//stage to connect window
+    private final Stage deferStage = new Stage();//stage to defer issues
+    private final VBox deferVbox = new VBox(20);
+    private final Pane deferPane = new Pane();
+    
+    private final Label lbDeferTime=new Label("Время");
+    private final Label lbDeferDate=new Label("Дата");
+    private final Label lbDeferTo=new Label("До");
+    private final TextField tfDeferTime=new TextField();
+    private final TextField tfDeferDate=new TextField();
+    
+    private final Button deferTimeButton = new Button();
+    private final Button deferDayButton = new Button();
+    private final Button deferHourButton = new Button();
+    private final Button deferAfterButton = new Button();
+    private final ProgressBar progressBarDefer = new ProgressBar();
+    
+    private final Stage dialogStage = new Stage();//stage to connect window
     private final VBox dialogVbox = new VBox(20);
     private final TextField tfHost=new TextField();
+    private final TextField tfHostDefer=new TextField();
+    private final TextField tfPriorityDefer=new TextField();
     private final TextField tfKey=new TextField();
     private final TextField tfSIW=new TextField();
     private final TextField tfSN=new TextField();
@@ -181,6 +211,8 @@ public class RM_1 extends Application {
     private final TextField tfAD=new TextField();
     private final TextField tfAE=new TextField();
     private final Label lbHost=new Label("Хост");
+    private final Label lbHostDefer=new Label("Хост отложенных");
+    private final Label lbPriorityDefer=new Label("Ид приоритета для отложенных");
     private final Label lbKey=new Label("Ключ");
     private final Label lbStatusesText=new Label("Идентификаторы статусов задач");
     private final Label lbSIW=new Label("В работе");
@@ -192,7 +224,7 @@ public class RM_1 extends Application {
     private final Label lbAD=new Label("Разработка");
     private final Label lbAE=new Label("Проектирование");
     private final Button connectButton = new Button();
-    private final Stage trackers = new Stage();//stage to view trackers and statuses
+    private final Stage trackersStage = new Stage();//stage to view trackers and statuses
     private final List<CheckBox> checkboxTrackers = new ArrayList();
     private final List<CheckBox> checkboxStatuses = new ArrayList();
     private List<IssueStatus> statusesList = null;
@@ -212,12 +244,13 @@ public class RM_1 extends Application {
     private final Label lbSubproject=new Label();
     private final VBox projectsToggleGroupVbox = new VBox(5);
     private Scene projectsScene;            
-    private final Stage spentHours = new Stage();//stage to add spent hours
+    private final Stage spentHoursStage = new Stage();//stage to add spent hours
     private final VBox spentHoursVbox = new VBox(20);
     private final Label lbSpentHours=new Label();
     private final TextField tfSpentHours=new TextField();
     private final Button addSpentHours= new Button();
     private ConnectClass cc;  
+    private ConnectDeferClass connDefer;  
     private final Image urlImage = new Image("images/url.png",30,30,false,false);
     private final Button urlButton = new Button("",new ImageView(urlImage));
     private final Image startImage = new Image("images/start.png",30,30,false,false);
@@ -257,7 +290,7 @@ public class RM_1 extends Application {
     private java.awt.TrayIcon trayIcon;
     private final ButtonType okButtonType = new ButtonType("ОК", ButtonBar.ButtonData.OK_DONE);
     private final ButtonType cancelButtonType = new ButtonType("Отмена", ButtonBar.ButtonData.CANCEL_CLOSE);
-    private final TextInputDialog tiDialog = new TextInputDialog();
+    private TextInputDialog tiDialog = new TextInputDialog();
     private String selectedBrowser = "";
     private boolean defaultBrowser = true;
     
@@ -336,7 +369,7 @@ public class RM_1 extends Application {
                         
                 }
           
-                    dialog.hide();                
+                    dialogStage.hide();                
       }
     private void addExtraSpentHours(String name){
        if((issueIdSpentHours!=0)&&(!name.trim().isEmpty())&&Float.parseFloat(name.replaceAll(",",".").replaceAll(":","."))>0)
@@ -647,12 +680,12 @@ public class RM_1 extends Application {
                     LOG.log(Level.SEVERE, null, ex);
                 }
                 //show window
-                description.show();
-                descriptionText.setMaxWidth(description.getWidth()-50);
-                descriptionComments.setMaxWidth(description.getWidth()-50);
-                description.widthProperty().addListener((ObservableValue<? extends Number> observableValue, Number oldSceneWidth, Number newSceneWidth) -> {
-                  descriptionText.setMaxWidth(description.getWidth()-50);
-                  descriptionComments.setMaxWidth(description.getWidth()-50);
+                descriptionStage.show();
+                descriptionText.setMaxWidth(descriptionStage.getWidth()-50);
+                descriptionComments.setMaxWidth(descriptionStage.getWidth()-50);
+                descriptionStage.widthProperty().addListener((ObservableValue<? extends Number> observableValue, Number oldSceneWidth, Number newSceneWidth) -> {
+                  descriptionText.setMaxWidth(descriptionStage.getWidth()-50);
+                  descriptionComments.setMaxWidth(descriptionStage.getWidth()-50);
                 });
             }
             else{//set action for left button click
@@ -722,6 +755,7 @@ public class RM_1 extends Application {
                                     }
                           }
                     });
+                    tiDialog = new TextInputDialog();
                 }
                 
                }catch(NumberFormatException ex){
@@ -1247,6 +1281,60 @@ private static String readFile(String path, Charset encoding)
   byte[] encoded = Files.readAllBytes(Paths.get(path));
   return new String(encoded, encoding);
 }
+
+    private void setDeferTime(String dateReturn){
+         progressBarDefer.setVisible(true);
+         try{
+                if(table.getSelectionModel().getSelectedItem()!=null){
+                    int idDeferIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+                   
+                              
+                    String url = "http://rmdash.post.msdnr.ru/create?host="+cc.getHost()+"&api_key="+cc.getKey()+"&id_issue="+idDeferIssue+"&date_return="+dateReturn+"&status_before="+mgr.getIssueManager().getIssueById(idDeferIssue).getStatusId()+"&status_defer="+custClass.getID_STATUS_DEFER();
+                                       
+                    changeIssueStatusFromNew(idDeferIssue,ID_STATUS_DEFER,true);                  
+                    setTableIssues();
+                    if(!markedIssue.trim().isEmpty()&&timeStartInWork!=0)
+                    updateTableIssues(); 
+                    multilineRowTheme();              
+                    URL obj;
+                    try {
+                        obj = new URL(url);
+                        HttpURLConnection connection = (HttpURLConnection) obj.openConnection();
+                        connection.setRequestMethod("GET");
+                        BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                        String inputLine;
+                        StringBuffer response = new StringBuffer();
+                        while ((inputLine = in.readLine()) != null) {
+                            response.append(inputLine);
+                         }
+                        in.close();
+                        System.out.println(response.toString());
+                        if(!response.toString().equals("true")){
+                            alert.setTitle("Внимание");
+                            alert.setHeaderText(null);
+                            alert.setContentText("Возникли проблемы. Автоматический возврат произведен не будет.");
+                            alert.showAndWait();
+                        
+                        }
+                        
+                        } catch (MalformedURLException ex) {
+                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                         } catch (ProtocolException ex) {
+                            Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                         } catch (IOException ex) {
+                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                        }
+                }
+            }catch(NumberFormatException ex){
+                LOG.addHandler(handler);
+                LOG.log(Level.SEVERE, null, ex);
+            } catch (RedmineException ex) {  
+                Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            progressBarDefer.setVisible(false);
+            disableButtons(false);
+    }
+
 @Override
     public void start(Stage primaryStage) throws FileNotFoundException, KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException, RedmineException {
      
@@ -1307,10 +1395,11 @@ private static String readFile(String path, Charset encoding)
         }
     
         stage=primaryStage;
-        description.setTitle(PROGRAM_NAME);
-        dialog.setTitle(PROGRAM_NAME);
-        trackers.setTitle(PROGRAM_NAME);
-        spentHours.setTitle(PROGRAM_NAME);
+        descriptionStage.setTitle(PROGRAM_NAME);
+        deferStage.setTitle("Отложить задачу");
+        dialogStage.setTitle(PROGRAM_NAME);
+        trackersStage.setTitle(PROGRAM_NAME);
+        spentHoursStage.setTitle(PROGRAM_NAME);
         settingsButton.setTooltip(new Tooltip("Установить соединение"));
         urlButton.setTooltip(new Tooltip("Открыть задачу в браузере"));
         startButton.setTooltip(new Tooltip("Запустить задачу"));
@@ -1323,8 +1412,8 @@ private static String readFile(String path, Charset encoding)
         projectsButton.setTooltip(new Tooltip("Выбрать проект, в который\n будут создаваться задачи"));
 
         if(!windowsSystem)table.setStyle("-fx-font-size:12px;");
-                    description.initModality(Modality.APPLICATION_MODAL);
-                    description.initOwner(primaryStage);
+                    descriptionStage.initModality(Modality.APPLICATION_MODAL);
+                    descriptionStage.initOwner(primaryStage);
                     //set sizes and margin depending on OS
                     if(windowsSystem)
                     {
@@ -1357,12 +1446,15 @@ private static String readFile(String path, Charset encoding)
                
                     }
                         lbHost.setMaxWidth(35);
+                      //  lbHostDefer.setMaxWidth(35);
                         lbKey.setMaxWidth(40);
                         tfHost.setMaxWidth(200);
                         tfKey.setMaxWidth(200);
                         lbHost.setMaxHeight(40);
+                      //  lbHostDefer.setMaxHeight(40);
                         lbKey.setMaxHeight(40);
                         tfHost.setMaxHeight(40);
+                       // tfHostDefer.setMaxHeight(40);
                         tfKey.setMaxHeight(40);
                         tfSIW.setMaxWidth(80);
                         tfSN.setMaxWidth(80);
@@ -1399,6 +1491,62 @@ private static String readFile(String path, Charset encoding)
                     descriptionVbox.getChildren().add(tfNewComment);
                     descriptionVbox.getChildren().add(addComment);
                     descriptionVbox.setAlignment(Pos.BOTTOM_RIGHT);
+                   
+                   
+          
+                    //components on defer pane
+               
+                    deferAfterButton.setText("На потом");
+                    deferAfterButton.setLayoutX(20.0);
+                    deferAfterButton.setLayoutY(20.0);
+                   
+                    
+                    deferDayButton.setText("До завтра");
+                    deferDayButton.setLayoutX(120.0);
+                    deferDayButton.setLayoutY(20.0);
+                    
+                    deferHourButton.setText("На час");
+                    deferHourButton.setLayoutX(230.0);
+                    deferHourButton.setLayoutY(20.0);
+                    
+                    lbDeferTo.setLayoutX(20.0);
+                    lbDeferTo.setLayoutY(80.0); 
+                    
+                    lbDeferTime.setLayoutX(210.0);
+                    lbDeferTime.setLayoutY(50.0);
+                    
+                    lbDeferDate.setLayoutX(40.0);
+                    lbDeferDate.setLayoutY(50.0);
+                    
+                    tfDeferTime.setLayoutX(200.0);
+                    tfDeferTime.setLayoutY(80.0);
+                    tfDeferTime.setMaxWidth(100);                   
+                    
+                    tfDeferDate.setLayoutX(40.0);
+                    tfDeferDate.setLayoutY(80.0);
+                    tfDeferDate.setMaxWidth(100);
+                    
+                    deferTimeButton.setText("ОК");
+                    deferTimeButton.setLayoutX(300.0);
+                    deferTimeButton.setLayoutY(80.0);
+                    
+                    progressBarDefer.setLayoutX(120.0);
+                    progressBarDefer.setLayoutY(110.0);
+                    progressBarDefer.setVisible(false);
+                          
+                    deferPane.getChildren().add(lbDeferTime);
+                    deferPane.getChildren().add(lbDeferTo);
+                    deferPane.getChildren().add(lbDeferDate);
+                   
+                    deferPane.getChildren().add(tfDeferDate);
+                    deferPane.getChildren().add(tfDeferTime);                              
+                    
+                    deferPane.getChildren().add(deferDayButton);
+                    deferPane.getChildren().add(deferHourButton);
+                    deferPane.getChildren().add(deferAfterButton);
+                    deferPane.getChildren().add(deferTimeButton);
+                    deferPane.getChildren().add(progressBarDefer);
+                            
                     addSpentHours.setText("ОК");
                     tfSpentHours.setMaxWidth(240);
                    
@@ -1409,15 +1557,19 @@ private static String readFile(String path, Charset encoding)
                     VBox.setMargin(tfSpentHours, new Insets(-5.0,5.0,15.0,5.0));
                     VBox.setMargin(addSpentHours, new Insets(-60.0,5.0,15.0,260.0));
                     
-                    dialog.initModality(Modality.APPLICATION_MODAL);
-                    dialog.initOwner(primaryStage);
+                    dialogStage.initModality(Modality.APPLICATION_MODAL);
+                    dialogStage.initOwner(primaryStage);
                     connectButton.setText("Соединиться");
                     selectTrackersButton.setText("Принять");
                     VBox.setMargin(lbHost, new Insets(30.0,5.0,5.0,25.0));
-                    VBox.setMargin(lbKey, new Insets(20.0,5.0,5.0,25.0));
-                    VBox.setMargin(tfHost, new Insets(-107.0,5.0,5.0,65.0));
-                    VBox.setMargin(tfKey, new Insets(12.0,5.0,5.0,65.0));
-                    VBox.setMargin(lbStatusesText, new Insets(12.0,5.0,5.0,65.0));
+                    VBox.setMargin(lbHostDefer, new Insets(-15.0,5.0,0.0,25.0));
+                    VBox.setMargin(lbPriorityDefer, new Insets(-15.0,5.0,0.0,25.0));
+                    VBox.setMargin(lbKey, new Insets(8.0,5.0,5.0,25.0));
+                    VBox.setMargin(tfHost, new Insets(-95.0,5.0,5.0,65.0));
+                    VBox.setMargin(tfHostDefer, new Insets(-20.0,30.0,5.0,25.0));
+                    VBox.setMargin(tfPriorityDefer, new Insets(-20.0,30.0,5.0,25.0));
+                    VBox.setMargin(tfKey, new Insets(0.0,5.0,5.0,65.0));
+                    VBox.setMargin(lbStatusesText, new Insets(-10.0,5.0,5.0,65.0));
                     VBox.setMargin(lbSIW, new Insets(-20.0,5.0,5.0,25.0));
                     VBox.setMargin(lbSN, new Insets(-20.0,5.0,5.0,25.0));
                     VBox.setMargin(lbSF, new Insets(-20.0,5.0,5.0,25.0));
@@ -1444,6 +1596,10 @@ private static String readFile(String path, Charset encoding)
                     dialogVbox.getChildren().add(lbKey);
                     dialogVbox.getChildren().add(tfHost);
                     dialogVbox.getChildren().add(tfKey);
+                    dialogVbox.getChildren().add(lbHostDefer);
+                    dialogVbox.getChildren().add(tfHostDefer);
+                    dialogVbox.getChildren().add(lbPriorityDefer);
+                    dialogVbox.getChildren().add(tfPriorityDefer);
                     dialogVbox.getChildren().add(lbStatusesText);
                     dialogVbox.getChildren().add(lbSIW);
                     dialogVbox.getChildren().add(tfSIW);
@@ -1463,18 +1619,21 @@ private static String readFile(String path, Charset encoding)
                     dialogVbox.getChildren().add(connectButton);
                     Scene dialogScene;
                     if(windowsSystem)
-                        dialogScene = new Scene(dialogVbox, 300, 450);
+                        dialogScene = new Scene(dialogVbox, 300, 500);
                     else
-                        dialogScene = new Scene(dialogVbox, 320, 450);
-                    dialog.setScene(dialogScene);
+                        dialogScene = new Scene(dialogVbox, 320, 500);
+                    dialogStage.setScene(dialogScene);
                     Scene descriptionScene;
                     if(windowsSystem)
                         descriptionScene = new Scene(descriptionVbox, 310, 300);
                     else
                         descriptionScene = new Scene(descriptionVbox, 380, 300);
-                    description.setScene(descriptionScene);
+                    descriptionStage.setScene(descriptionScene);
+                     Scene deferScene;                
+                     deferScene = new Scene(deferPane, 380, 150);
+                     deferStage.setScene(deferScene);
                     Scene spentHoursScene = new Scene(spentHoursVbox, 310, 80);
-                    spentHours.setScene(spentHoursScene);
+                    spentHoursStage.setScene(spentHoursScene);
                     
         //hide unnecessary columns
         spentHoursCol.setResizable(false);
@@ -1612,6 +1771,7 @@ private static String readFile(String path, Charset encoding)
                                             nameTabsStringList.set(tabs.getSelectionModel().getSelectedIndex(), name);
                                             writeToTrackersOut();
                                         });
+                                        tiDialog = new TextInputDialog();
                                     }
                                 }
                             });
@@ -1705,7 +1865,7 @@ private static String readFile(String path, Charset encoding)
             }
         }
         tfNewComment.setText("");
-        description.hide();
+        descriptionStage.hide();
         });
     //open issue's url by button press
           urlButton.setOnAction((final ActionEvent e) -> {
@@ -1717,7 +1877,7 @@ private static String readFile(String path, Charset encoding)
         });
           //show window with connection info by press settingsButton
           settingsButton.setOnAction((final ActionEvent e) -> {
-              dialog.show();
+              dialogStage.show();
         });
           //add action of finishButton press
            finishButton.setOnAction((final ActionEvent e) -> {
@@ -1763,6 +1923,7 @@ private static String readFile(String path, Charset encoding)
                                  addExtraSpentHours(name); 
                               }
                         });
+                        tiDialog = new TextInputDialog();
        
                        startButton.setGraphic(new ImageView(startImage));
                        startButton.setTooltip(new Tooltip("Запустить задачу"));
@@ -1793,7 +1954,7 @@ private static String readFile(String path, Charset encoding)
                        issueIdSpentHours=idFinishedIssue;
                        tiDialog.getEditor().setText("00:01");
                        tiDialog.getEditor().requestFocus();
-                        tiDialog.setTitle(PROGRAM_NAME);
+                        tiDialog.setTitle("Внести дополнительные трудозатраты");
                         tiDialog.setHeaderText(null);
                         tiDialog.setContentText("Введите трудозатраты:");
 
@@ -1804,6 +1965,7 @@ private static String readFile(String path, Charset encoding)
                                  addExtraSpentHours(name); 
                               }
                         });
+                        tiDialog = new TextInputDialog();
                        setTableIssues();
                        updateTableIssues();
                        multilineRowTheme();
@@ -1825,7 +1987,7 @@ private static String readFile(String path, Charset encoding)
                        issueIdSpentHours=selectedIssue;
                        tiDialog.getEditor().setText("00:01");
                        tiDialog.getEditor().requestFocus();
-                        tiDialog.setTitle(PROGRAM_NAME);
+                        tiDialog.setTitle("Внести дополнительные трудозатраты");
                         tiDialog.setHeaderText(null);
                         tiDialog.setContentText("Введите трудозатраты:");
 
@@ -1836,6 +1998,7 @@ private static String readFile(String path, Charset encoding)
                                  addExtraSpentHours(name); 
                               }
                         });
+                        tiDialog = new TextInputDialog();
                        selectedIssue=0;
                        markedIssue="";
                        //get updated issues from api and insert into table
@@ -1962,10 +2125,32 @@ private static String readFile(String path, Charset encoding)
               //enable buttons   
              disableButtons(false);
         });
-        deferButton.setOnAction((final ActionEvent e) -> {
-   
+        
+         
+        deferButton.setOnAction((final ActionEvent e) -> {  
+                 
+    
+            
+     // deferTimeFrame.setVisible(true);
         disableButtons(true);
-            try{
+        if((mgr!=null)&&(table.getSelectionModel().getSelectedItem()!=null)){
+            SimpleDateFormat sdfDate = new SimpleDateFormat("dd.MM.yyyy");//dd/MM/yyyy
+            Date now = new Date();
+            String strDate = sdfDate.format(now);                   
+            tfDeferDate.setText(strDate);
+             sdfDate.applyPattern("HH:mm");  
+             Calendar c = Calendar.getInstance(); 
+             c.setTime(now);           
+             c.add(Calendar.HOUR_OF_DAY, 1);                      
+             now = c.getTime();        
+             strDate = sdfDate.format(now);                   
+            tfDeferTime.setText(strDate);
+            
+            
+            deferStage.show();
+            int idDeferIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+        }
+            /*try{
                 if(table.getSelectionModel().getSelectedItem()!=null){
                     int idDeferIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
                     changeIssueStatusFromNew(idDeferIssue,ID_STATUS_DEFER,true);
@@ -1976,9 +2161,94 @@ private static String readFile(String path, Charset encoding)
             }catch(NumberFormatException ex){
                 LOG.addHandler(handler);
                 LOG.log(Level.SEVERE, null, ex);
-            }     
+            }   */  
          disableButtons(false);
         });
+     
+
+        deferTimeButton.setOnAction((final ActionEvent e) -> {
+           
+            String dateDT=tfDeferDate.getText();
+            String timeDT=tfDeferTime.getText();
+            DateFormat formatter = new SimpleDateFormat("dd.MM.yyyy HH:mm");
+            String dateReturn=dateDT+" "+timeDT;
+            try {
+                Date dt = formatter.parse(dateReturn);
+                Calendar c = Calendar.getInstance(); 
+                c.setTime(dt);
+                c.add(Calendar.HOUR_OF_DAY, 3);
+                dt = c.getTime();        
+                long unixTime = (long) dt.getTime()/1000;
+                System.out.println(unixTime );
+                deferStage.hide();
+               
+                int idDeferIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+                Issue updatedIssue = mgr.getIssueManager().getIssueById(idDeferIssue);               
+                updatedIssue.setPriorityId(5);
+              // mgr.getIssueManager().getIssuePriorities().get(0);
+                mgr.getIssueManager().update(updatedIssue);
+                setDeferTime(Long.toString(unixTime));
+         
+            } catch (ParseException ex) {
+                Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (RedmineException ex) {
+                Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+            }
+                    
+          
+         
+        
+        });
+         deferDayButton.setOnAction((final ActionEvent e) -> {
+         
+            
+            Date dt = new Date();
+            Calendar c = Calendar.getInstance(); 
+            c.setTime(dt); 
+            c.add(Calendar.DATE, 1);
+            c.set(Calendar.HOUR_OF_DAY, 9);
+            c.set(Calendar.MINUTE, 0);
+           
+            dt = c.getTime();        
+            long unixTime = (long) dt.getTime()/1000;
+            System.out.println(unixTime );
+            deferStage.hide();
+            setDeferTime(Long.toString(unixTime));
+            
+        
+        });
+         deferHourButton.setOnAction((final ActionEvent e) -> {
+   
+            Date dt = new Date();
+            Calendar c = Calendar.getInstance(); 
+            c.setTime(dt); 
+            c.add(Calendar.HOUR_OF_DAY, 4);
+            dt = c.getTime();        
+            long unixTime = (long) dt.getTime()/1000;
+            System.out.println(unixTime );
+            setDeferTime(Long.toString(unixTime));
+            deferStage.hide();
+        
+        });
+         deferAfterButton.setOnAction((final ActionEvent e) -> {
+   
+            Date dt = new Date();
+            Calendar c = Calendar.getInstance(); 
+            c.setTime(dt); 
+            c.add(Calendar.MONTH, 1);
+            c.set(Calendar.DAY_OF_MONTH, 1);
+            c.set(Calendar.HOUR_OF_DAY, 9);
+            c.set(Calendar.MINUTE, 0);
+            dt = c.getTime();        
+            long unixTime = (long) dt.getTime()/1000;
+            System.out.println(unixTime );
+            setDeferTime(Long.toString(unixTime));
+            deferStage.hide();
+        
+        });
+        
+        
+        
         browserButton.setOnAction((final ActionEvent e) -> {
             browserStackPane = new StackPane();
             if(defaultBrowser||selectedBrowser.isEmpty())defaultBrowserCheckBox.setSelected(true);
@@ -2154,8 +2424,8 @@ private static String readFile(String path, Charset encoding)
                 trackersList.clear();
                     
                 Scene trackersScene = new Scene(trackersStackPane, 400, 600);
-                trackers.setScene(trackersScene);                    
-                trackers.show();
+                trackersStage.setScene(trackersScene);                    
+                trackersStage.show();
             }
         });
         selectTrackersButton.setOnAction((final ActionEvent e) -> {
@@ -2189,7 +2459,7 @@ private static String readFile(String path, Charset encoding)
             setTableIssues();
             if(!markedIssue.trim().isEmpty()&&timeStartInWork!=0)
                 updateTableIssues();
-            trackers.hide();
+            trackersStage.hide();
         });
         
         createButton.setOnAction((final ActionEvent e) -> {
@@ -2271,6 +2541,7 @@ private static String readFile(String path, Charset encoding)
                 disableButtons(false);
                 }
             });
+            tiDialog = new TextInputDialog();
             }
         }
         });
@@ -2350,6 +2621,7 @@ private static String readFile(String path, Charset encoding)
                       }
                     }
                 });
+                tiDialog = new TextInputDialog();
             }
             disableButtons(false);
         });
@@ -2429,7 +2701,8 @@ private static String readFile(String path, Charset encoding)
                                     nameTabsStringList.set(tabs.getSelectionModel().getSelectedIndex(), name);
                                     writeToTrackersOut();
                                 }
-                            });                                     
+                            });   
+                            tiDialog = new TextInputDialog();
                         }
                     }
                 });
