@@ -145,7 +145,7 @@ public class RM_1 extends Application {
     private int ID_ACTIVITY_ENGINEERING=0;//10;
     private static final String ICON_IMAGE_LOC =
             "http://icons.iconarchive.com/icons/scafer31000/bubble-circle-3/16/GameCenter-icon.png";
-    private static final String PROGRAM_NAME= "QuestBook";
+    private static final String PROGRAM_NAME= "QuestBook v3.1.2";
     private long timeStartInWork=0;//time when issue was started
     private int selectedIssue=0;//id of selected issue
     private String markedIssue="";//issue which marked to change color in table pf selected Issue
@@ -293,6 +293,7 @@ public class RM_1 extends Application {
     private TextInputDialog tiDialog = new TextInputDialog();
     private String selectedBrowser = "";
     private boolean defaultBrowser = true;
+    private boolean useDeferHost = false;
     
       private void connectFunc() throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException{
       if((!tfHost.getText().trim().isEmpty())&&(!tfKey.getText().trim().isEmpty()))
@@ -1098,6 +1099,67 @@ public class RM_1 extends Application {
                     }
         return false;
     }
+    
+    private boolean setDeferParams()
+    {
+            String hostDefer;
+            int idPriorityDefer;
+                try{
+                     hostDefer=tfHostDefer.getText();
+                  }
+                  catch(NumberFormatException ex){
+                      hostDefer="";
+                  }
+                  try{
+                  idPriorityDefer=Integer.valueOf(tfPriorityDefer.getText());
+                  }
+                  catch(NumberFormatException ex){
+                      idPriorityDefer=-1;
+                  }
+                  if(hostDefer.equals("") || idPriorityDefer==-1)
+                    connDefer = null;
+                  else
+                      connDefer = new ConnectDeferClass(hostDefer,idPriorityDefer);
+                  try { 
+                      if(connDefer!=null)
+                      {
+                        FileOutputStream fos = new FileOutputStream("connDefer.out");
+                            try (ObjectOutputStream oos = new ObjectOutputStream(fos)) {
+                                oos.writeObject(connDefer);
+                                oos.flush();
+                                return true;
+                            }
+                     catch (FileNotFoundException ex) {
+                        LOG.addHandler(handler);
+                        LOG.log(Level.SEVERE, null, ex);
+                    }
+                  }
+                  }catch (IOException ex) {
+                        LOG.addHandler(handler);
+                        LOG.log(Level.SEVERE, null, ex);
+                    }
+        return false;
+    }
+    private boolean getDeferParams() throws IOException
+    {
+        try {
+                        FileInputStream fis = new FileInputStream("connDefer.out");
+                        ObjectInputStream oin = new ObjectInputStream(fis);
+                        connDefer = (ConnectDeferClass) oin.readObject(); 
+                        if(connDefer!=null)
+                        {
+                           
+                            return true;
+                        }
+                        
+                        } catch (FileNotFoundException | ClassNotFoundException ex) { 
+                            LOG.addHandler(handler);
+                            LOG.log(Level.SEVERE, null, ex);
+                            return false;
+                    }
+        return false;
+    }
+    
     private void updateAllSpentHours()
     {
     disableButtons(true);
@@ -1289,7 +1351,7 @@ private static String readFile(String path, Charset encoding)
                     int idDeferIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
                    
                               
-                    String url = "http://rmdash.post.msdnr.ru/create?host="+cc.getHost()+"&api_key="+cc.getKey()+"&id_issue="+idDeferIssue+"&date_return="+dateReturn+"&status_before="+mgr.getIssueManager().getIssueById(idDeferIssue).getStatusId()+"&status_defer="+custClass.getID_STATUS_DEFER();
+                    String url = connDefer.getHostDefer()+"/create?host="+cc.getHost()+"&api_key="+cc.getKey()+"&id_issue="+idDeferIssue+"&date_return="+dateReturn+"&status_before="+mgr.getIssueManager().getIssueById(idDeferIssue).getStatusId()+"&status_defer="+custClass.getID_STATUS_DEFER();
                                        
                     changeIssueStatusFromNew(idDeferIssue,ID_STATUS_DEFER,true);                  
                     setTableIssues();
@@ -1319,11 +1381,26 @@ private static String readFile(String path, Charset encoding)
                         
                         } catch (MalformedURLException ex) {
                              Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                             alert.setTitle("Внимание");
+                            alert.setHeaderText(null);
+                            alert.setContentText("Неправильно задано имя хоста для отложенных задач. Автоматический возврат произведен не будет!");
+                            alert.showAndWait();
+                              LOG.addHandler(handler);
+                              LOG.log(Level.SEVERE, null, ex);
                          } catch (ProtocolException ex) {
                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                              LOG.addHandler(handler);
+                              LOG.log(Level.SEVERE, null, ex);
                          } catch (IOException ex) {
+                               alert.setTitle("Внимание");
+                               alert.setHeaderText(null);
+                            alert.setContentText("Неправильно задано имя хоста для отложенных задач. Автоматический возврат произведен не будет!");
+                            alert.showAndWait();
                              Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                               LOG.addHandler(handler);
+                              LOG.log(Level.SEVERE, null, ex);
                         }
+                       
                 }
             }catch(NumberFormatException ex){
                 LOG.addHandler(handler);
@@ -1806,6 +1883,11 @@ private static String readFile(String path, Charset encoding)
                         tfSVSH.setText(String.valueOf(ID_STATUS_VALUATION_SPENT_TIME));
                         tfAD.setText(String.valueOf(ID_ACTIVITY_DEVELOPMENT));
                         tfAE.setText(String.valueOf(ID_ACTIVITY_ENGINEERING));
+                        if(getDeferParams()){
+                            useDeferHost=true;
+                            tfHostDefer.setText(connDefer.getHostDefer());
+                            tfPriorityDefer.setText(String.valueOf(connDefer.getPriorityDefer()));
+                        }
                         
                         setHeightOfRowsLinux();
                         
@@ -1839,6 +1921,9 @@ private static String readFile(String path, Charset encoding)
                                     connectFunc();
                                     multilineRowTheme();
                                 }
+                                if(setDeferParams()){     
+                                    useDeferHost=true;
+                                }else  useDeferHost=false;
                             } catch (KeyStoreException | IOException | NoSuchAlgorithmException | CertificateException | KeyManagementException | UnrecoverableKeyException ex) {
                                 LOG.addHandler(handler);
                                 LOG.log(Level.SEVERE, null, ex);
@@ -2037,6 +2122,10 @@ private static String readFile(String path, Charset encoding)
                       connectFunc();
                       multilineRowTheme();
                   }
+                   if(setDeferParams()){     
+                        useDeferHost=true;
+                   }else  useDeferHost=false;
+                 
               } catch (KeyStoreException | IOException | NoSuchAlgorithmException | CertificateException | KeyManagementException | UnrecoverableKeyException ex) {
                   LOG.addHandler(handler);
                   LOG.log(Level.SEVERE, null, ex);
@@ -2133,6 +2222,7 @@ private static String readFile(String path, Charset encoding)
             
      // deferTimeFrame.setVisible(true);
         disableButtons(true);
+        if(useDeferHost){
         if((mgr!=null)&&(table.getSelectionModel().getSelectedItem()!=null)){
             SimpleDateFormat sdfDate = new SimpleDateFormat("dd.MM.yyyy");//dd/MM/yyyy
             Date now = new Date();
@@ -2150,20 +2240,24 @@ private static String readFile(String path, Charset encoding)
             deferStage.show();
             int idDeferIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
         }
-            /*try{
+        }else{
+            try{
                 if(table.getSelectionModel().getSelectedItem()!=null){
                     int idDeferIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
                     changeIssueStatusFromNew(idDeferIssue,ID_STATUS_DEFER,true);
                     setTableIssues();
                     if(!markedIssue.trim().isEmpty()&&timeStartInWork!=0)
-                    updateTableIssues();   
+                    updateTableIssues(); 
+                     multilineRowTheme();
                 }
             }catch(NumberFormatException ex){
                 LOG.addHandler(handler);
                 LOG.log(Level.SEVERE, null, ex);
-            }   */  
+            }   
+        }
          disableButtons(false);
         });
+      
      
 
         deferTimeButton.setOnAction((final ActionEvent e) -> {
@@ -2184,7 +2278,7 @@ private static String readFile(String path, Charset encoding)
                
                 int idDeferIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
                 Issue updatedIssue = mgr.getIssueManager().getIssueById(idDeferIssue);               
-                updatedIssue.setPriorityId(5);
+                updatedIssue.setPriorityId(connDefer.getPriorityDefer());
               // mgr.getIssueManager().getIssuePriorities().get(0);
                 mgr.getIssueManager().update(updatedIssue);
                 setDeferTime(Long.toString(unixTime));
@@ -2479,6 +2573,7 @@ private static String readFile(String path, Charset encoding)
             result.ifPresent(name -> {
                 if(!name.trim().isEmpty())
                 {
+                  
                  disableButtons(true);
                  URIBuilder builder;
                 try {
@@ -2489,6 +2584,7 @@ private static String readFile(String path, Charset encoding)
             
                     HttpPost request = new HttpPost(uriNew);
                     
+                     name= name.replaceAll("\"","\\\\\"");
 //allow to use this certificate
                         KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
                         trustStore.load(null, null);                        

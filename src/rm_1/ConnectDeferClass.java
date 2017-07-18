@@ -36,6 +36,7 @@ public class ConnectDeferClass implements Serializable {
      
     public ConnectDeferClass(String hostDefer,int priorityDefer) {
         this.hostDefer = hostDefer;
+        this.priorityDefer = priorityDefer;
     }
 
 }
