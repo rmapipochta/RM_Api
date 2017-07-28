@@ -384,7 +384,7 @@ public class RM_1 extends Application {
                } catch (RedmineException ex) {
                    alert.setTitle("Внимание");
                    alert.setHeaderText(null);
-                   alert.setContentText("Трудозатраты не удалось сохранить!");
+                   alert.setContentText("Трудозатраты не удалось сохранить! Задача: " +issueIdSpentHours+" Трудозатраты: "+TE.getHours());
                    alert.showAndWait();
                    LOG.addHandler(handler);
                LOG.log(Level.SEVERE, null, ex);
@@ -429,7 +429,7 @@ public class RM_1 extends Application {
                            } catch (RedmineException ex) {
                                alert.setTitle("Внимание");
                                alert.setHeaderText(null);
-                               alert.setContentText("Трудозатраты не удалось сохранить!");
+                               alert.setContentText("Трудозатраты не удалось сохранить! Задача: " +selectedIssue+" Трудозатраты: "+TE.getHours());
                                alert.showAndWait();
                                LOG.addHandler(handler);
                                 LOG.log(Level.SEVERE, null, ex);
@@ -749,7 +749,7 @@ public class RM_1 extends Application {
                                     } catch (RedmineException ex) {
                                         alert.setTitle("Внимание");
                                         alert.setHeaderText(null);
-                                        alert.setContentText("Трудозатраты не удалось сохранить!");
+                                        alert.setContentText("Трудозатраты не удалось сохранить! Задача: "+idOfIssueWhereChangeSpentHours+" Трудозатраты:"+TE.getHours());
                                         alert.showAndWait();
                                         LOG.addHandler(handler);
                                         LOG.log(Level.SEVERE, null, ex);
@@ -2693,7 +2693,7 @@ private static String readFile(String path, Charset encoding)
                                     } catch (RedmineException ex) {
                                         alert.setTitle("Внимание");
                                         alert.setHeaderText(null);
-                                        alert.setContentText("Трудозатраты не удалось сохранить!");
+                                        alert.setContentText("Трудозатраты не удалось сохранить! Задача: " +selectedIssue+" Трудозатраты: "+TE.getHours());
                                         alert.showAndWait();
                                         LOG.addHandler(handler);
                                         LOG.log(Level.SEVERE, null, ex);
