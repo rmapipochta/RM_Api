@@ -2,8 +2,10 @@
 package rm_1;
 
 
+import java.awt.AWTException;
 import javafx.scene.text.Font;
 import java.awt.event.MouseListener;
+import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -14,12 +16,14 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.ProtocolException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -33,6 +37,7 @@ import java.security.cert.CertificateException;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
 import rm_1.redmineapi.RedmineManager;
 import rm_1.redmineapi.RedmineManagerFactory;
 import rm_1.redmineapi.bean.Issue;
@@ -65,6 +70,7 @@ import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ChoiceBox;
+import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.RadioButton;
@@ -189,8 +195,7 @@ public class RM_1 extends Application {
     private final Label lbDeferDate=new Label("Дата");
     private final Label lbDeferTo=new Label("До");
     private final TextField tfDeferTime=new TextField();
-    private final TextField tfDeferDate=new TextField();
-    
+    private final DatePicker deferDatePicker = new DatePicker();
     private final Button deferTimeButton = new Button();
     private final Button deferDayButton = new Button();
     private final Button deferHourButton = new Button();
@@ -294,6 +299,7 @@ public class RM_1 extends Application {
     private String selectedBrowser = "";
     private boolean defaultBrowser = true;
     private boolean useDeferHost = false;
+    private String userName="";
     
       private void connectFunc() throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException{
       if((!tfHost.getText().trim().isEmpty())&&(!tfKey.getText().trim().isEmpty()))
@@ -347,6 +353,13 @@ public class RM_1 extends Application {
                             //create connection
                         mgr = RedmineManagerFactory.createWithApiKey(uri, apiAccessKey,client);
                         idCurrentUser = mgr.getUserManager().getCurrentUser().getId();
+                        userName=mgr.getUserManager().getCurrentUser().getFullName();
+                         try {
+                            userName=URLEncoder.encode(userName, "UTF-8");
+                            } catch (UnsupportedEncodingException ex) {
+                            LOG.addHandler(handler);
+                            LOG.log(Level.SEVERE, null, ex);
+                        }
                         setTableIssues();
                     
                      Params params2 = new Params()
@@ -1359,6 +1372,7 @@ private static String readFile(String path, Charset encoding)
                     updateTableIssues(); 
                     multilineRowTheme();              
                     URL obj;
+                    sendAction(String.valueOf(idDeferIssue),"Отложил");
                     try {
                         obj = new URL(url);
                         HttpURLConnection connection = (HttpURLConnection) obj.openConnection();
@@ -1411,7 +1425,71 @@ private static String readFile(String path, Charset encoding)
             progressBarDefer.setVisible(false);
             disableButtons(false);
     }
-
+    
+    private void sendAction(String issue, String action){
+       
+                   
+                    int idActionIssue =Integer.parseInt(issue);                  
+                   try {
+                            issue=mgr.getIssueManager().getIssueById(idActionIssue).getSubject();
+                            issue=URLEncoder.encode(issue, "UTF-8");
+                    } catch (UnsupportedEncodingException ex) {
+                            LOG.addHandler(handler);
+                            LOG.log(Level.SEVERE, null, ex);
+                    } catch (RedmineException ex) {
+                            LOG.addHandler(handler);
+                            LOG.log(Level.SEVERE, null, ex);
+                    }
+                   
+                    long unixTime = System.currentTimeMillis() / 1000L;
+                    
+                    String url = connDefer.getHostDefer()+"/actions/create?user="+userName+"&action="+action+"&issue="+issue+"&time="+String.valueOf(unixTime);
+                                                         
+                    URL obj;
+                    try {
+                        obj = new URL(url);
+                        HttpURLConnection connection = (HttpURLConnection) obj.openConnection();
+                        connection.setRequestMethod("GET");
+                        BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                        String inputLine;
+                        StringBuffer response = new StringBuffer();
+                        while ((inputLine = in.readLine()) != null) {
+                            response.append(inputLine);
+                         }
+                        in.close();
+                        System.out.println(response.toString());
+                        if(!response.toString().equals("true")){
+                            alert.setTitle("Внимание");
+                            alert.setHeaderText(null);
+                            alert.setContentText("Возникли проблемы.");
+                            alert.showAndWait();
+                        
+                        }
+                        
+                        } catch (MalformedURLException ex) {
+                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                             alert.setTitle("Внимание");
+                            alert.setHeaderText(null);
+                            alert.setContentText("Неправильно задано имя хоста для отложенных задач. Автоматический возврат произведен не будет!");
+                            alert.showAndWait();
+                              LOG.addHandler(handler);
+                              LOG.log(Level.SEVERE, null, ex);
+                         } catch (ProtocolException ex) {
+                            Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                              LOG.addHandler(handler);
+                              LOG.log(Level.SEVERE, null, ex);
+                         } catch (IOException ex) {
+                               alert.setTitle("Внимание");
+                               alert.setHeaderText(null);
+                            alert.setContentText("Неправильно задано имя хоста для отложенных задач. Автоматический возврат произведен не будет!");
+                            alert.showAndWait();
+                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                               LOG.addHandler(handler);
+                              LOG.log(Level.SEVERE, null, ex);
+                        }
+                       
+             
+    }
 @Override
     public void start(Stage primaryStage) throws FileNotFoundException, KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException, RedmineException {
      
@@ -1598,10 +1676,10 @@ private static String readFile(String path, Charset encoding)
                     tfDeferTime.setLayoutX(200.0);
                     tfDeferTime.setLayoutY(80.0);
                     tfDeferTime.setMaxWidth(100);                   
-                    
-                    tfDeferDate.setLayoutX(40.0);
-                    tfDeferDate.setLayoutY(80.0);
-                    tfDeferDate.setMaxWidth(100);
+                   
+                    deferDatePicker.setLayoutX(40.0);
+                    deferDatePicker.setLayoutY(80.0);
+                    deferDatePicker.setMaxWidth(130);
                     
                     deferTimeButton.setText("ОК");
                     deferTimeButton.setLayoutX(300.0);
@@ -1615,7 +1693,6 @@ private static String readFile(String path, Charset encoding)
                     deferPane.getChildren().add(lbDeferTo);
                     deferPane.getChildren().add(lbDeferDate);
                    
-                    deferPane.getChildren().add(tfDeferDate);
                     deferPane.getChildren().add(tfDeferTime);                              
                     
                     deferPane.getChildren().add(deferDayButton);
@@ -1623,6 +1700,7 @@ private static String readFile(String path, Charset encoding)
                     deferPane.getChildren().add(deferAfterButton);
                     deferPane.getChildren().add(deferTimeButton);
                     deferPane.getChildren().add(progressBarDefer);
+                    deferPane.getChildren().add(deferDatePicker);
                             
                     addSpentHours.setText("ОК");
                     tfSpentHours.setMaxWidth(240);
@@ -1969,6 +2047,17 @@ private static String readFile(String path, Charset encoding)
                //disable buttons at the time of work
             
                disableButtons(true);
+                sendAction(String.valueOf(selectedIssue),"Завершил");
+                java.awt.Image imageTray;  
+                try {
+                    imageTray = ImageIO.read(new File("src/images/stop.png"));
+                    
+                    if(imageTray!=null)
+                    trayIcon.setImage(imageTray.getScaledInstance(24, 24,java.awt.Image.SCALE_DEFAULT));
+                } catch (IOException ex) {
+                     Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                 }
+                
                //if connection established and issue selected
                if((mgr!=null)&&(table.getSelectionModel().getSelectedItem()!=null))
                {
@@ -1987,7 +2076,7 @@ private static String readFile(String path, Charset encoding)
                        try {
                            updateIssue = mgr.getIssueManager().getIssueById(selectedIssue);
                            updateIssue.setStatusId(ID_STATUS_FINISHED);
-                           
+                          
                            mgr.getIssueManager().update(updateIssue);
                            spentHoursMap.remove(selectedIssue);
                        } catch (RedmineException ex) {
@@ -2133,8 +2222,9 @@ private static String readFile(String path, Charset encoding)
         });
           //add action to button which starts issues
           startButton.setOnAction((final ActionEvent e) -> {
-              //disable buttons
-   
+            
+              
+               //disable buttons              
              disableButtons(true);
               //if connection established and issue selected
               if ((mgr!=null)&&(selectedIssue!=0)) {
@@ -2152,6 +2242,11 @@ private static String readFile(String path, Charset encoding)
                           markedIssue=String.valueOf(selectedIssue);                          
                       }
                       changeIssueStatusFromNew(selectedIssue, ID_STATUS_IN_WORK,true);
+                   
+                         java.awt.Image imageTray = ImageIO.read(new File("src/images/start.png"));  
+                         if(imageTray!=null)
+                         trayIcon.setImage(imageTray.getScaledInstance(24, 24,java.awt.Image.SCALE_DEFAULT));
+                      sendAction(String.valueOf(selectedIssue),"Запустил");
                       setTableIssues();      
                       updateTableIssues();
                       //start timer
@@ -2181,6 +2276,7 @@ private static String readFile(String path, Charset encoding)
                       Button button = (Button) e.getSource();
                       button.setGraphic(new ImageView(pauseImage));
                       button.setTooltip(new Tooltip("Остановить таймер"));
+                      
                   } else { //if issue already started in this program
                
                       //stop timer
@@ -2205,8 +2301,14 @@ private static String readFile(String path, Charset encoding)
                       try{
                           if(table.getSelectionModel().getSelectedItem()!=null)
                           selectedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+                          sendAction(String.valueOf(selectedIssue),"Пауза");
+                          java.awt.Image imageTray = ImageIO.read(new File("src/images/stop.png"));  
+                          if(imageTray!=null)
+                         trayIcon.setImage(imageTray.getScaledInstance(24, 24,java.awt.Image.SCALE_DEFAULT));
                       }catch(NumberFormatException ex){
                           selectedIssue=0;
+                      } catch (IOException ex) {
+                          Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
                       }
                   }
                   lbTime.setText("");
@@ -2227,7 +2329,8 @@ private static String readFile(String path, Charset encoding)
             SimpleDateFormat sdfDate = new SimpleDateFormat("dd.MM.yyyy");//dd/MM/yyyy
             Date now = new Date();
             String strDate = sdfDate.format(now);                   
-            tfDeferDate.setText(strDate);
+            deferDatePicker.setValue(LocalDate.now());
+          
              sdfDate.applyPattern("HH:mm");  
              Calendar c = Calendar.getInstance(); 
              c.setTime(now);           
@@ -2262,9 +2365,10 @@ private static String readFile(String path, Charset encoding)
 
         deferTimeButton.setOnAction((final ActionEvent e) -> {
            
-            String dateDT=tfDeferDate.getText();
+            String dateDT=deferDatePicker.getValue().toString();
+            
             String timeDT=tfDeferTime.getText();
-            DateFormat formatter = new SimpleDateFormat("dd.MM.yyyy HH:mm");
+            DateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm");
             String dateReturn=dateDT+" "+timeDT;
             try {
                 Date dt = formatter.parse(dateReturn);
@@ -2282,6 +2386,8 @@ private static String readFile(String path, Charset encoding)
               // mgr.getIssueManager().getIssuePriorities().get(0);
                 mgr.getIssueManager().update(updatedIssue);
                 setDeferTime(Long.toString(unixTime));
+                
+               
          
             } catch (ParseException ex) {
                 Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
@@ -2290,7 +2396,7 @@ private static String readFile(String path, Charset encoding)
             }
                     
           
-         
+          
         
         });
          deferDayButton.setOnAction((final ActionEvent e) -> {
@@ -2666,7 +2772,6 @@ private static String readFile(String path, Charset encoding)
                     Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
                 }
                 tiDialog.setWidth(600);
-                 
                 Optional<String> result = tiDialog.showAndWait();
                 result.ifPresent(name -> {
                     if(!name.trim().isEmpty())
@@ -2689,6 +2794,7 @@ private static String readFile(String path, Charset encoding)
                                      String spentHoursStringBuf=mgr.getIssueManager().getIssueById(selectedIssue).getSpentHours().toString();
                                     spentHoursMap.replace(selectedIssue,convertSpentHours(spentHoursStringBuf));
                                     setTableIssues();
+                                  
                                     
                                     } catch (RedmineException ex) {
                                         alert.setTitle("Внимание");
