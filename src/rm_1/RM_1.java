@@ -61,6 +61,7 @@ import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.embed.swing.SwingFXUtils;
 import javafx.event.Event;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -259,6 +260,7 @@ public class RM_1 extends Application {
     private final Image urlImage = new Image("images/url.png",30,30,false,false);
     private final Button urlButton = new Button("",new ImageView(urlImage));
     private final Image startImage = new Image("images/start.png",30,30,false,false);
+    private final Image startImage24 = new Image("images/start.png",24,24,false,false);
     private final Button startButton = new Button("",new ImageView(startImage));
     private final Image finishImage = new Image("images/fin.png",30,30,false,false);
     private final Button finishButton = new Button("",new ImageView(finishImage));
@@ -276,6 +278,7 @@ public class RM_1 extends Application {
     private final Image browserImage = new Image("images/browser.png",30,30,false,false);
     private final Button browserButton = new Button("",new ImageView(browserImage));   
     private final Image stopImage = new Image("images/stop.png",30,30,false,false);
+    private final Image stopImage24 = new Image("images/stop.png",24,24,false,false);
     private final Button stopButton = new Button("",new ImageView(stopImage));   
     private final Label lbTime=new Label(""); 
     private final AnchorPane rootAnchorPane = new AnchorPane();
@@ -1442,8 +1445,8 @@ private static String readFile(String path, Charset encoding)
                     }
                    
                     long unixTime = System.currentTimeMillis() / 1000L;
-                    
-                    String url = connDefer.getHostDefer()+"/actions/create?user="+userName+"&action="+action+"&issue="+issue+"&time="+String.valueOf(unixTime);
+                 //   System.out.println(String.valueOf(idCurrentUser));
+                    String url = connDefer.getHostDefer()+"/actions/create?user="+userName+"&action="+action+"&issue="+issue+"&time="+String.valueOf(unixTime)+"&id_issue="+idActionIssue+"&id_user="+idCurrentUser+"&id_parent="+idProject;
                                                          
                     URL obj;
                     try {
@@ -1459,19 +1462,21 @@ private static String readFile(String path, Charset encoding)
                         in.close();
                         System.out.println(response.toString());
                         if(!response.toString().equals("true")){
-                            alert.setTitle("Внимание");
-                            alert.setHeaderText(null);
-                            alert.setContentText("Возникли проблемы.");
-                            alert.showAndWait();
+//                            alert.setTitle("Внимание");
+//                            alert.setHeaderText(null);
+//                            alert.setContentText("Возникли проблемы.");
+//                            alert.showAndWait();
+                            LOG.addHandler(handler);
+                            LOG.log(Level.SEVERE, null, "statistic not send");
                         
                         }
                         
                         } catch (MalformedURLException ex) {
                              Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-                             alert.setTitle("Внимание");
-                            alert.setHeaderText(null);
-                            alert.setContentText("Неправильно задано имя хоста для отложенных задач. Автоматический возврат произведен не будет!");
-                            alert.showAndWait();
+//                             alert.setTitle("Внимание");
+//                            alert.setHeaderText(null);
+//                            alert.setContentText("Статистика не отправлена");
+//                            alert.showAndWait();
                               LOG.addHandler(handler);
                               LOG.log(Level.SEVERE, null, ex);
                          } catch (ProtocolException ex) {
@@ -1479,10 +1484,10 @@ private static String readFile(String path, Charset encoding)
                               LOG.addHandler(handler);
                               LOG.log(Level.SEVERE, null, ex);
                          } catch (IOException ex) {
-                               alert.setTitle("Внимание");
-                               alert.setHeaderText(null);
-                            alert.setContentText("Неправильно задано имя хоста для отложенных задач. Автоматический возврат произведен не будет!");
-                            alert.showAndWait();
+//                               alert.setTitle("Внимание");
+//                               alert.setHeaderText(null);
+//                            alert.setContentText("Статистика не отправлена");
+//                            alert.showAndWait();
                              Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
                                LOG.addHandler(handler);
                               LOG.log(Level.SEVERE, null, ex);
@@ -2047,21 +2052,15 @@ private static String readFile(String path, Charset encoding)
                //disable buttons at the time of work
             
                disableButtons(true);
-                sendAction(String.valueOf(selectedIssue),"Завершил");
-                java.awt.Image imageTray;  
-                try {
-                    imageTray = ImageIO.read(new File("src/images/stop.png"));
-                    
-                    if(imageTray!=null)
-                    trayIcon.setImage(imageTray.getScaledInstance(24, 24,java.awt.Image.SCALE_DEFAULT));
-                } catch (IOException ex) {
-                     Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-                 }
+                
+               BufferedImage trayImage = SwingFXUtils.fromFXImage(stopImage24,null);             
+               trayIcon.setImage(trayImage);
                 
                //if connection established and issue selected
                if((mgr!=null)&&(table.getSelectionModel().getSelectedItem()!=null))
                {
                    int idFinishedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+                   sendAction(String.valueOf(idFinishedIssue),"Завершил");
                    //if issue is in work now
                    if((selectedIssue!=0)&&(timeStartInWork!=0)&&(selectedIssue==idFinishedIssue)){
                        //save time which spent on this issue
@@ -2242,16 +2241,18 @@ private static String readFile(String path, Charset encoding)
                           markedIssue=String.valueOf(selectedIssue);                          
                       }
                       changeIssueStatusFromNew(selectedIssue, ID_STATUS_IN_WORK,true);
-                   
-                         java.awt.Image imageTray = ImageIO.read(new File("src/images/start.png"));  
-                         if(imageTray!=null)
-                         trayIcon.setImage(imageTray.getScaledInstance(24, 24,java.awt.Image.SCALE_DEFAULT));
+                      
+                      //change image in tray
+                      BufferedImage trayImage = SwingFXUtils.fromFXImage(startImage24,null);             
+                      trayIcon.setImage(trayImage);
+                      //send to rmdashboard action start
                       sendAction(String.valueOf(selectedIssue),"Запустил");
                       setTableIssues();      
                       updateTableIssues();
                       //start timer
                       } catch(Exception ex){}
                       try{
+                      workTimer = new Timer();
                       workTimer.schedule(new TimerTask() {
                           @Override
                           public void run() {
@@ -2263,7 +2264,7 @@ private static String readFile(String path, Charset encoding)
                                   long seconds=TimeUnit.MILLISECONDS.toSeconds(millis)-TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis));
                                   
                                   String s = hours+":"+((minutes<10)?"0"+String.valueOf(minutes):minutes)+":"+((seconds<10)?"0"+String.valueOf(seconds):seconds);
-                                  //set spent time value in counter
+                                  //set spent time value in counter                             
                                   if(s.length()<=8)
                                       lbTime.setText(s);
                                   else
@@ -2271,7 +2272,11 @@ private static String readFile(String path, Charset encoding)
                               });
                           }
                       }, 0_000, 1_000);
-                      } catch(Exception ex){}
+                      } catch(Exception ex){
+                        LOG.addHandler(handler);
+                        LOG.log(Level.SEVERE, null, ex);
+                           System.out.println("Попалась!");
+                      }
                       //cahnge image view of button to pause image
                       Button button = (Button) e.getSource();
                       button.setGraphic(new ImageView(pauseImage));
@@ -2302,14 +2307,12 @@ private static String readFile(String path, Charset encoding)
                           if(table.getSelectionModel().getSelectedItem()!=null)
                           selectedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
                           sendAction(String.valueOf(selectedIssue),"Пауза");
-                          java.awt.Image imageTray = ImageIO.read(new File("src/images/stop.png"));  
-                          if(imageTray!=null)
-                         trayIcon.setImage(imageTray.getScaledInstance(24, 24,java.awt.Image.SCALE_DEFAULT));
+                           //change image in tray
+                          BufferedImage trayImage = SwingFXUtils.fromFXImage(stopImage24,null);             
+                          trayIcon.setImage(trayImage);
                       }catch(NumberFormatException ex){
                           selectedIssue=0;
-                      } catch (IOException ex) {
-                          Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-                      }
+                      } 
                   }
                   lbTime.setText("");
               }
