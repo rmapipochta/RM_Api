@@ -412,6 +412,9 @@ public class RM_1 extends Application {
       //if issue selected and in work now
         if(selectedIssue!=0&&timeStartInWork!=0)
                    {
+                      //change image in tray
+                      BufferedImage trayImage = SwingFXUtils.fromFXImage(stopImage24,null);             
+                      trayIcon.setImage(trayImage);
                        //get time
                         long allTime=System.currentTimeMillis()-timeStartInWork;
                         //if spent more than one minute 
@@ -467,11 +470,12 @@ public class RM_1 extends Application {
 
             // set up a system tray icon.
             java.awt.SystemTray tray = java.awt.SystemTray.getSystemTray();
-            imageLoc = new URL(
-                    ICON_IMAGE_LOC
-            );
-            image = ImageIO.read(imageLoc);
-            trayIcon = new java.awt.TrayIcon(image);
+//            imageLoc = new URL(
+//                    ICON_IMAGE_LOC
+//            );
+//            image = ImageIO.read(imageLoc);
+            BufferedImage trayImage = SwingFXUtils.fromFXImage(stopImage24,null);
+            trayIcon = new java.awt.TrayIcon(trayImage);
 
             // if the user double-clicks on the tray icon, show the main app stage.
             trayIcon.addActionListener(event -> Platform.runLater(this::showStage));
@@ -537,6 +541,8 @@ public class RM_1 extends Application {
                         LOG.log(Level.SEVERE, null, ex);
                     }
                     writeToTrackersOut();
+                    if(selectedIssue!=0&&timeStartInWork!=0)
+                       sendAction(String.valueOf(selectedIssue),"Пауза");
                 saveSpentHours();
                 workTimer.cancel();
                 pauseTimer();
@@ -558,7 +564,7 @@ public class RM_1 extends Application {
             // add the application tray icon to the system tray.
             tray.add(trayIcon);
             
-        } catch (java.awt.AWTException | IOException e) {
+        } catch (Exception ex) {
             System.out.println("Unable to init system tray");
         }
     }
@@ -1436,6 +1442,7 @@ private static String readFile(String path, Charset encoding)
                    try {
                             issue=mgr.getIssueManager().getIssueById(idActionIssue).getSubject();
                             issue=URLEncoder.encode(issue, "UTF-8");
+                            action=URLEncoder.encode(action, "UTF-8");
                     } catch (UnsupportedEncodingException ex) {
                             LOG.addHandler(handler);
                             LOG.log(Level.SEVERE, null, ex);
@@ -1446,7 +1453,7 @@ private static String readFile(String path, Charset encoding)
                    
                     long unixTime = System.currentTimeMillis() / 1000L;
                  //   System.out.println(String.valueOf(idCurrentUser));
-                    String url = connDefer.getHostDefer()+"/actions/create?user="+userName+"&action="+action+"&issue="+issue+"&time="+String.valueOf(unixTime)+"&id_issue="+idActionIssue+"&id_user="+idCurrentUser+"&id_parent="+idProject;
+                    String url = connDefer.getHostDefer()+"/actions/create?user="+userName+"&action="+action+"&issue="+issue+"&time="+String.valueOf(unixTime)+"&id_issue="+idActionIssue+"&id_user="+idCurrentUser+"&id_parent="+((!idSubproject.trim().isEmpty())?idSubproject:"")+"&id_project="+idProject;
                                                          
                     URL obj;
                     try {
@@ -2197,11 +2204,18 @@ private static String readFile(String path, Charset encoding)
           connectButton.setOnAction((final ActionEvent e) -> {
               try {
                   //if some issue now in work, save time which spent on this issue 
+                  
+                   startButton.setGraphic(new ImageView(startImage));
+                   startButton.setTooltip(new Tooltip("Запусить задачу"));
+                   
+                   if(selectedIssue!=0&&timeStartInWork!=0)
+                       sendAction(String.valueOf(selectedIssue),"Пауза");
                   saveSpentHours();
                   //stop timer
                   workTimer.cancel();
                   //clear counter
                   lbTime.setText("");
+                  
                   //update id of statuses and activities
                   if(setConfigParams())
                   
@@ -2275,7 +2289,6 @@ private static String readFile(String path, Charset encoding)
                       } catch(Exception ex){
                         LOG.addHandler(handler);
                         LOG.log(Level.SEVERE, null, ex);
-                           System.out.println("Попалась!");
                       }
                       //cahnge image view of button to pause image
                       Button button = (Button) e.getSource();
@@ -2295,6 +2308,9 @@ private static String readFile(String path, Charset encoding)
                       Button button = (Button) e.getSource();
                       button.setGraphic(new ImageView(startImage));
                       button.setTooltip(new Tooltip("Запусить задачу"));
+                      
+                       sendAction(String.valueOf(markedIssue),"Пауза");
+
                       //update timer
                       workTimer = new Timer();
                       //clear counter
@@ -2306,10 +2322,7 @@ private static String readFile(String path, Charset encoding)
                       try{
                           if(table.getSelectionModel().getSelectedItem()!=null)
                           selectedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
-                          sendAction(String.valueOf(selectedIssue),"Пауза");
-                           //change image in tray
-                          BufferedImage trayImage = SwingFXUtils.fromFXImage(stopImage24,null);             
-                          trayIcon.setImage(trayImage);
+                       
                       }catch(NumberFormatException ex){
                           selectedIssue=0;
                       } 
@@ -2768,7 +2781,8 @@ private static String readFile(String path, Charset encoding)
                 else
                     tiDialog.setTitle("Таймер был запущен и не остановлен");
 
-                tiDialog.setHeaderText(null);
+                tiDialog.setHeaderText(null);               
+                
                 try {
                     tiDialog.setContentText("Введите действительные трудозатраты по задаче: \n"+mgr.getIssueManager().getIssueById(selectedIssue).getSubject());
                 } catch (RedmineException ex) {
@@ -2779,6 +2793,10 @@ private static String readFile(String path, Charset encoding)
                 result.ifPresent(name -> {
                     if(!name.trim().isEmpty())
                     {
+                        sendAction(String.valueOf(markedIssue),"Пауза");
+                        //change image in tray
+                        BufferedImage trayImage = SwingFXUtils.fromFXImage(stopImage24,null);             
+                        trayIcon.setImage(trayImage);
                         //останавливаем задачу и записываем трудозатраты введенные пользователем
                        //stop timer
                       workTimer.cancel();
