@@ -65,6 +65,7 @@ import javafx.embed.swing.SwingFXUtils;
 import javafx.event.Event;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.ButtonBar;
@@ -152,7 +153,7 @@ public class RM_1 extends Application {
     private int ID_ACTIVITY_ENGINEERING=0;//10;
     private static final String ICON_IMAGE_LOC =
             "http://icons.iconarchive.com/icons/scafer31000/bubble-circle-3/16/GameCenter-icon.png";
-    private static final String PROGRAM_NAME= "QuestBook v3.1.2";
+    private static final String PROGRAM_NAME= "QuestBook v3.1.5";
     private long timeStartInWork=0;//time when issue was started
     private int selectedIssue=0;//id of selected issue
     private String markedIssue="";//issue which marked to change color in table pf selected Issue
@@ -470,10 +471,6 @@ public class RM_1 extends Application {
 
             // set up a system tray icon.
             java.awt.SystemTray tray = java.awt.SystemTray.getSystemTray();
-//            imageLoc = new URL(
-//                    ICON_IMAGE_LOC
-//            );
-//            image = ImageIO.read(imageLoc);
             BufferedImage trayImage = SwingFXUtils.fromFXImage(stopImage24,null);
             trayIcon = new java.awt.TrayIcon(trayImage);
 
@@ -965,7 +962,6 @@ public class RM_1 extends Application {
                                     params2 = new Params()
                                             .add("set_filter", "1")
                                             .add("assigned_to_id", String.valueOf(idCurrentUser));
-                                
                                 List<Issue> issues2=null;
                                 try {
                                     issues2 = mgr.getIssueManager().getIssues(params2).getResults();
@@ -1003,13 +999,21 @@ public class RM_1 extends Application {
                         });  
                         }
                     },
-                    20_000,
-                    30_000
+                    60_000,
+                    60_000
             );
 
     }
     private void disableButtons(boolean dis)
     {
+        try{
+//            if(dis)
+//             stage.getScene().setCursor(Cursor.WAIT);
+//            else
+             stage.getScene().setCursor(Cursor.DEFAULT);
+        }
+        catch(Exception ex){          
+        }
         startButton.setDisable(dis);
         finishButton.setDisable(dis);
         urlButton.setDisable(dis);
@@ -1434,7 +1438,7 @@ private static String readFile(String path, Charset encoding)
             progressBarDefer.setVisible(false);
             disableButtons(false);
     }
-    
+    //send to server dashboard info about action user
     private void sendAction(String issue, String action){
        
                    
@@ -1923,6 +1927,7 @@ private static String readFile(String path, Charset encoding)
                             });
                             Label tabALabel = new Label(nameTabsStringList.get(i));
                             tab.setGraphic(tabALabel);
+                            
                             tabALabel.setOnMouseClicked((MouseEvent mouseEvent) -> {
                                 if (mouseEvent.getButton().equals(MouseButton.PRIMARY)) {
                                     if (mouseEvent.getClickCount() == 2) {                                        
@@ -2054,6 +2059,12 @@ private static String readFile(String path, Charset encoding)
           settingsButton.setOnAction((final ActionEvent e) -> {
               dialogStage.show();
         });
+          
+          finishButton.setOnMousePressed((final MouseEvent e) -> {
+               if (e.getButton().equals(MouseButton.PRIMARY)) {  
+                     stage.getScene().setCursor(Cursor.WAIT);                     
+               }
+          });
           //add action of finishButton press
            finishButton.setOnAction((final ActionEvent e) -> {
                //disable buttons at the time of work
@@ -2233,18 +2244,27 @@ private static String readFile(String path, Charset encoding)
                   LOG.log(Level.SEVERE, null, ex);
               }
         });
-          //add action to button which starts issues
-          startButton.setOnAction((final ActionEvent e) -> {
-            
-              
-               //disable buttons              
-             disableButtons(true);
-              //if connection established and issue selected
-              if ((mgr!=null)&&(selectedIssue!=0)) {
-                  if ((selectedIssue!=0)&&(timeStartInWork==0)) {
-                      //notice time
-                      timeStartInWork= System.currentTimeMillis();
-                      
+          
+          
+          
+    class onStartButton extends Thread
+    {   
+	@Override
+	public void run()
+	{
+              try{
+                   changeIssueStatusFromNew(selectedIssue, ID_STATUS_IN_WORK,true);                                      
+                      //send to rmdashboard action start
+                      sendAction(String.valueOf(selectedIssue),"Запустил");
+              } catch(Exception ex){}
+            Platform.runLater(new Runnable() {
+            @Override
+            public void run() {
+           
+                     timeStartInWork= System.currentTimeMillis();
+                        //change image in tray
+                      BufferedImage trayImage = SwingFXUtils.fromFXImage(startImage24,null);             
+                      trayIcon.setImage(trayImage);
                       try{
                       //save value of selectd issue so that change it color in the table
                       if(table.getSelectionModel().getSelectedItem()!=null){
@@ -2254,17 +2274,31 @@ private static String readFile(String path, Charset encoding)
                       {
                           markedIssue=String.valueOf(selectedIssue);                          
                       }
-                      changeIssueStatusFromNew(selectedIssue, ID_STATUS_IN_WORK,true);
-                      
-                      //change image in tray
-                      BufferedImage trayImage = SwingFXUtils.fromFXImage(startImage24,null);             
-                      trayIcon.setImage(trayImage);
-                      //send to rmdashboard action start
-                      sendAction(String.valueOf(selectedIssue),"Запустил");
+                     
                       setTableIssues();      
                       updateTableIssues();
                       //start timer
                       } catch(Exception ex){}
+                         
+            } 
+            });                
+        }
+    }
+          startButton.setOnMousePressed((final MouseEvent e) -> {
+               if (e.getButton().equals(MouseButton.PRIMARY)) {  
+                     stage.getScene().setCursor(Cursor.WAIT);                     
+               }
+          });
+          //add action to button which starts issues
+          startButton.setOnAction((final ActionEvent e) -> { 
+               //disable buttons              
+             disableButtons(true);  
+              //if connection established and issue selected
+              if ((mgr!=null)&&(selectedIssue!=0)) {
+                  if ((selectedIssue!=0)&&(timeStartInWork==0)) {
+                      //notice time
+                      timeStartInWork= System.currentTimeMillis();
+                      
                       try{
                       workTimer = new Timer();
                       workTimer.schedule(new TimerTask() {
@@ -2290,11 +2324,10 @@ private static String readFile(String path, Charset encoding)
                         LOG.addHandler(handler);
                         LOG.log(Level.SEVERE, null, ex);
                       }
-                      //cahnge image view of button to pause image
-                      Button button = (Button) e.getSource();
-                      button.setGraphic(new ImageView(pauseImage));
-                      button.setTooltip(new Tooltip("Остановить таймер"));
-                      
+                       startButton.setGraphic(new ImageView(pauseImage));
+                      startButton.setTooltip(new Tooltip("Остановить таймер")); 
+                       onStartButton sb = new onStartButton();	//Создание потока    
+                       sb.start(); 
                   } else { //if issue already started in this program
                
                       //stop timer
@@ -2332,8 +2365,12 @@ private static String readFile(String path, Charset encoding)
               //enable buttons   
              disableButtons(false);
         });
-        
-         
+    
+        deferButton.setOnMousePressed((final MouseEvent e) -> {
+               if (e.getButton().equals(MouseButton.PRIMARY)) {  
+                     stage.getScene().setCursor(Cursor.WAIT);                     
+               }
+          });
         deferButton.setOnAction((final ActionEvent e) -> {  
                  
     
@@ -2378,7 +2415,12 @@ private static String readFile(String path, Charset encoding)
         });
       
      
-
+        deferTimeButton.setOnMousePressed((final MouseEvent e) -> {
+               if (e.getButton().equals(MouseButton.PRIMARY)) {  
+                     stage.getScene().setCursor(Cursor.WAIT);   
+                     deferStage.getScene().setCursor(Cursor.WAIT);  
+               }
+          });
         deferTimeButton.setOnAction((final ActionEvent e) -> {
            
             String dateDT=deferDatePicker.getValue().toString();
@@ -2401,8 +2443,7 @@ private static String readFile(String path, Charset encoding)
                 updatedIssue.setPriorityId(connDefer.getPriorityDefer());
               // mgr.getIssueManager().getIssuePriorities().get(0);
                 mgr.getIssueManager().update(updatedIssue);
-                setDeferTime(Long.toString(unixTime));
-                
+                setDeferTime(Long.toString(unixTime));       
                
          
             } catch (ParseException ex) {
@@ -2415,6 +2456,12 @@ private static String readFile(String path, Charset encoding)
           
         
         });
+         deferDayButton.setOnMousePressed((final MouseEvent e) -> {
+               if (e.getButton().equals(MouseButton.PRIMARY)) {  
+                     stage.getScene().setCursor(Cursor.WAIT);    
+                     deferStage.getScene().setCursor(Cursor.WAIT);  
+               }
+          });
          deferDayButton.setOnAction((final ActionEvent e) -> {
          
             
@@ -2429,10 +2476,15 @@ private static String readFile(String path, Charset encoding)
             long unixTime = (long) dt.getTime()/1000;
             System.out.println(unixTime );
             deferStage.hide();
-            setDeferTime(Long.toString(unixTime));
-            
-        
+            setDeferTime(Long.toString(unixTime));          
+
         });
+         deferHourButton.setOnMousePressed((final MouseEvent e) -> {
+               if (e.getButton().equals(MouseButton.PRIMARY)) {  
+                     stage.getScene().setCursor(Cursor.WAIT);    
+                     deferStage.getScene().setCursor(Cursor.WAIT);  
+               }
+          });
          deferHourButton.setOnAction((final ActionEvent e) -> {
    
             Date dt = new Date();
@@ -2443,9 +2495,15 @@ private static String readFile(String path, Charset encoding)
             long unixTime = (long) dt.getTime()/1000;
             System.out.println(unixTime );
             setDeferTime(Long.toString(unixTime));
-            deferStage.hide();
+            deferStage.hide();          
         
         });
+          deferAfterButton.setOnMousePressed((final MouseEvent e) -> {
+               if (e.getButton().equals(MouseButton.PRIMARY)) {  
+                     stage.getScene().setCursor(Cursor.WAIT);                     
+                     deferStage.getScene().setCursor(Cursor.WAIT);                     
+               }
+          });
          deferAfterButton.setOnAction((final ActionEvent e) -> {
    
             Date dt = new Date();
@@ -2459,11 +2517,14 @@ private static String readFile(String path, Charset encoding)
             long unixTime = (long) dt.getTime()/1000;
             System.out.println(unixTime );
             setDeferTime(Long.toString(unixTime));
-            deferStage.hide();
+            deferStage.hide();            
         
         });
         
-        
+       deferStage.setOnHidden(event -> {
+           stage.getScene().setCursor(Cursor.DEFAULT);
+           deferStage.getScene().setCursor(Cursor.DEFAULT);
+       });
         
         browserButton.setOnAction((final ActionEvent e) -> {
             browserStackPane = new StackPane();
@@ -2677,7 +2738,11 @@ private static String readFile(String path, Charset encoding)
                 updateTableIssues();
             trackersStage.hide();
         });
-        
+        createButton.setOnMousePressed((final MouseEvent e) -> {
+               if (e.getButton().equals(MouseButton.PRIMARY)) {  
+                     stage.getScene().setCursor(Cursor.WAIT);                     
+               }
+          });
         createButton.setOnAction((final ActionEvent e) -> {
             if(mgr!=null&&cc!=null){
              if(idProject.trim().isEmpty())
@@ -2763,6 +2828,11 @@ private static String readFile(String path, Charset encoding)
             }
         }
         });
+         stopButton.setOnMousePressed((final MouseEvent e) -> {
+               if (e.getButton().equals(MouseButton.PRIMARY)) {  
+                     stage.getScene().setCursor(Cursor.WAIT);                     
+               }
+          });
         stopButton.setOnAction((final ActionEvent e) -> {
             disableButtons(true);
             if ((mgr!=null)&&(selectedIssue!=0)&&(timeStartInWork!=0)) {
@@ -2906,7 +2976,7 @@ private static String readFile(String path, Charset encoding)
                 });
                 Label tabALabel = new Label("Вкладка " + (tabs.getTabs().size() + 1));
                 tab.setGraphic(tabALabel);
-          
+   
                 tabALabel.setOnMouseClicked((MouseEvent mouseEvent) -> {
                     if (mouseEvent.getButton().equals(MouseButton.PRIMARY)) {
                         if (mouseEvent.getClickCount() == 2) {
@@ -2933,9 +3003,23 @@ private static String readFile(String path, Charset encoding)
                 tabs.getSelectionModel().select(tab);
       
             });
-
-        tabs.getSelectionModel().selectedIndexProperty().addListener((ObservableValue<? extends Number> ov, Number oldValue, Number newValue) -> {
-            setTableIssues();
+    //поток для обработки перехода на новую вкладку
+    class tabClick extends Thread
+    {   
+        Number oldValue;
+        Number newValue;
+        public tabClick( Number oldValue, Number newValue){
+            this.newValue=newValue;
+            this.oldValue=oldValue;
+        }
+	@Override
+	public void run()
+	{
+            Platform.runLater(new Runnable() {
+            @Override
+            public void run() {
+        // Update UI here.
+          setTableIssues();
             if((oldValue!=newValue)&&(timeStartInWork==0))
             {
                 selectedIssue=0;
@@ -2943,7 +3027,16 @@ private static String readFile(String path, Charset encoding)
             }
             
             updateTableIssues();
-           
+            stage.getScene().setCursor(Cursor.DEFAULT);
+             }
+            });
+          
+	}
+    }
+        tabs.getSelectionModel().selectedIndexProperty().addListener((ObservableValue<? extends Number> ov, Number oldValue, Number newValue) -> {         
+	     stage.getScene().setCursor(Cursor.WAIT);	
+             tabClick te = new tabClick(oldValue,newValue);	//Создание потока
+             te.start();         
         }); 
         rootAnchorPane.setMaxWidth(table.getMaxWidth()+10);
         rootAnchorPane.setMaxHeight(50);
