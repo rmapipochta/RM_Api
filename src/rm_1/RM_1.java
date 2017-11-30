@@ -97,6 +97,8 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
+import javafx.scene.layout.Background;
+import javafx.scene.layout.Border;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
@@ -126,8 +128,10 @@ import org.apache.http.params.HttpProtocolParams;
 import org.apache.http.protocol.HTTP;
 import org.apache.http.conn.ssl.SSLSocketFactory;
 import org.apache.http.entity.StringEntity;
+import rm_1.redmineapi.CustomFieldManager;
 import rm_1.redmineapi.Include;
 import rm_1.redmineapi.Params;
+import rm_1.redmineapi.bean.CustomFieldDefinition;
 import rm_1.redmineapi.bean.IssueStatus;
 import rm_1.redmineapi.bean.Journal;
 import rm_1.redmineapi.bean.Project;
@@ -153,7 +157,7 @@ public class RM_1 extends Application {
     private int ID_ACTIVITY_ENGINEERING=0;//10;
     private static final String ICON_IMAGE_LOC =
             "http://icons.iconarchive.com/icons/scafer31000/bubble-circle-3/16/GameCenter-icon.png";
-    private static final String PROGRAM_NAME= "QuestBook v3.1.5";
+    private static final String PROGRAM_NAME= "QuestBook v3.1.7";
     private long timeStartInWork=0;//time when issue was started
     private int selectedIssue=0;//id of selected issue
     private String markedIssue="";//issue which marked to change color in table pf selected Issue
@@ -163,9 +167,11 @@ public class RM_1 extends Application {
     private String idSubproject ="";
     private Stage stage;//main stage of application
     private String urlIssue="";//url of selected issue
+    private String dirHome="";//home folder user
     // a timer allowing the tray icon to provide a periodic notification event.
     private Timer notificationTimer;
     private Timer workTimer = new Timer();
+//    private Timer onlineTimer = new Timer(); //sending http request that user online
     private Issue issueByIdWithDescription;//issue which selected to view description and comments
     private String uri="";//url of host
     private String apiAccessKey;//uses's key to connect to api
@@ -180,11 +186,12 @@ public class RM_1 extends Application {
     private final TableColumn<RowIssue, String> themeCol = new TableColumn("");//row with theme
     private final TableColumn<RowIssue, String> spentHoursCol = new TableColumn("");//row with author
     private final TableColumn<RowIssue, String> priorityIdCol = new TableColumn("Приоритет номер");//row with priority id. need to sort
+    private final TableColumn<RowIssue, String> author = new TableColumn("Автор задачи");//row with priority id. need to sort
     private final ObservableList<RowIssue> rowList = FXCollections.observableArrayList(); 
     private final Stage descriptionStage = new Stage();//stage to view description and comments
     private final VBox descriptionVbox = new VBox(20);
-    private final Label descriptionText=new Label();
-    private final Label descriptionComments=new Label();
+    private final TextArea descriptionText=new TextArea();
+    private final TextArea descriptionComments=new TextArea();
     private final TextArea tfNewComment=new TextArea();
     private final Button addComment = new Button();
     private final ScrollPane commentsScroll = new ScrollPane();
@@ -341,7 +348,7 @@ public class RM_1 extends Application {
                         cc=new ConnectClass(uri,apiAccessKey);
                         //save connection info to file
                     try {
-                        FileOutputStream fos = new FileOutputStream("conn.out");
+                        FileOutputStream fos = new FileOutputStream(dirHome+"conn.out");
                             try (ObjectOutputStream oos = new ObjectOutputStream(fos)) {
                                 oos.writeObject(cc);
                                 oos.flush();
@@ -525,7 +532,7 @@ public class RM_1 extends Application {
                 SizesPositionClass spc=new SizesPositionClass(stage.getX(),stage.getY(),stage.getScene().getHeight(),stage.getScene().getWidth());
                         //save sizes and position info to file
                     try {
-                        FileOutputStream fos = new FileOutputStream("size.out");
+                        FileOutputStream fos = new FileOutputStream(dirHome+"size.out");
                             try (ObjectOutputStream oos = new ObjectOutputStream(fos)) {
                                 oos.writeObject(spc);
                                 oos.flush();
@@ -685,10 +692,17 @@ public class RM_1 extends Application {
                     
                     descriptionText.setText(msg.toString());
                     
+                    
                     descriptionText.setWrapText(true);
                     descriptionComments.setWrapText(true);
-                    descriptionText.setTextAlignment(TextAlignment.JUSTIFY);
-                    descriptionComments.setTextAlignment(TextAlignment.JUSTIFY);
+//                    descriptionText.setTextAlignment(TextAlignment.JUSTIFY);
+//                   descriptionComments.setTextAlignment(TextAlignment.JUSTIFY);
+                    descriptionText.setEditable(false);
+                    descriptionComments.setEditable(false);
+                    descriptionComments.setBorder(Border.EMPTY);
+                    descriptionComments.setBackground(Background.EMPTY);
+                    descriptionText.setBorder(Border.EMPTY);
+                    descriptionText.setBackground(Background.EMPTY);
                     
                     msg = new StringBuilder();
                     msg.append(BufComment);
@@ -701,11 +715,11 @@ public class RM_1 extends Application {
                 }
                 //show window
                 descriptionStage.show();
-                descriptionText.setMaxWidth(descriptionStage.getWidth()-50);
-                descriptionComments.setMaxWidth(descriptionStage.getWidth()-50);
+                descriptionText.setMaxWidth(descriptionStage.getWidth()-30);
+                descriptionComments.setMaxWidth(descriptionStage.getWidth()-30);
                 descriptionStage.widthProperty().addListener((ObservableValue<? extends Number> observableValue, Number oldSceneWidth, Number newSceneWidth) -> {
-                  descriptionText.setMaxWidth(descriptionStage.getWidth()-50);
-                  descriptionComments.setMaxWidth(descriptionStage.getWidth()-50);
+                  descriptionText.setMaxWidth(descriptionStage.getWidth()-30);
+                  descriptionComments.setMaxWidth(descriptionStage.getWidth()-30);
                 });
             }
             else{//set action for left button click
@@ -799,10 +813,10 @@ public class RM_1 extends Application {
                     setText(empty ? "" : getItem());
                     setGraphic(null);
 
-                    TableRow<RowIssue> currentRow = getTableRow();
-
+                    TableRow<RowIssue> currentRow = getTableRow();          
+                  
                     if (!isEmpty()) {
-
+                        currentRow.setTooltip(new Tooltip(currentRow.getItem().getAuthor()));
                         if(item.equals(markedIssue)&&timeStartInWork!=0)
                             currentRow.setStyle("-fx-background-color:lightgreen");
                         else
@@ -864,7 +878,8 @@ public class RM_1 extends Application {
                                             
                                             text.setTextAlignment(TextAlignment.JUSTIFY);
                             
-                                         bufTheme=issue.getSubject();                                      
+                                         bufTheme=issue.getSubject();
+                                         
                                    
                                             try {
                                                 String spentHoursStringBuf=spentHoursMap.get(issue.getId());
@@ -883,7 +898,7 @@ public class RM_1 extends Application {
                                                         spentHoursStringBuf=convertSpentHours(spentHoursStringBuf);
                                                     spentHoursMap.put(issue.getId(), spentHoursStringBuf);
                                                 }
-                                                bufRowList.add(new RowIssue(issue.getId().toString(),issue.getStatusName(),issue.getPriorityText(),bufTheme,spentHoursStringBuf,issue.getPriorityId().toString()));
+                                                bufRowList.add(new RowIssue(issue.getId().toString(),issue.getStatusName(),issue.getPriorityText(),bufTheme,spentHoursStringBuf,issue.getPriorityId().toString(),issue.getAuthorName()));
                                             } catch (RedmineException ex) {
                                                 LOG.addHandler(handler);
                                                 LOG.log(Level.SEVERE, null, ex);
@@ -895,7 +910,7 @@ public class RM_1 extends Application {
         }
         else
         {
-             bufRowList.add(new RowIssue("","","","","",""));            
+             bufRowList.add(new RowIssue("","","","","","",""));            
         }
         int tabIndex = tabs.getSelectionModel().getSelectedIndex();
         if(rowIssueList.size()>0)
@@ -1083,7 +1098,7 @@ public class RM_1 extends Application {
                   try { 
                       if(custClass!=null && custClass.isOk())
                       {
-                        FileOutputStream fos = new FileOutputStream("config.out");
+                        FileOutputStream fos = new FileOutputStream(dirHome+"config.out");
                             try (ObjectOutputStream oos = new ObjectOutputStream(fos)) {
                                 oos.writeObject(custClass);
                                 oos.flush();
@@ -1103,7 +1118,7 @@ public class RM_1 extends Application {
     private boolean getConfigParams() throws IOException
     {
         try {
-                        FileInputStream fis = new FileInputStream("config.out");
+                        FileInputStream fis = new FileInputStream(dirHome+"config.out");
                         ObjectInputStream oin = new ObjectInputStream(fis);
                         custClass = (CustomizeClass) oin.readObject(); 
                         if(custClass!=null && custClass.isOk())
@@ -1149,7 +1164,7 @@ public class RM_1 extends Application {
                   try { 
                       if(connDefer!=null)
                       {
-                        FileOutputStream fos = new FileOutputStream("connDefer.out");
+                        FileOutputStream fos = new FileOutputStream(dirHome+"connDefer.out");
                             try (ObjectOutputStream oos = new ObjectOutputStream(fos)) {
                                 oos.writeObject(connDefer);
                                 oos.flush();
@@ -1169,7 +1184,7 @@ public class RM_1 extends Application {
     private boolean getDeferParams() throws IOException
     {
         try {
-                        FileInputStream fis = new FileInputStream("connDefer.out");
+                        FileInputStream fis = new FileInputStream(dirHome+"connDefer.out");
                         ObjectInputStream oin = new ObjectInputStream(fis);
                         connDefer = (ConnectDeferClass) oin.readObject(); 
                         if(connDefer!=null)
@@ -1292,7 +1307,7 @@ private void writeToTrackersOut()
     //save trackers and statuses info to file
     TrackersStatusesClass tsc=new TrackersStatusesClass(trackerIdStringList,statusIdStringList,nameTabsStringList, idProject, idSubproject);         
                     try {
-                        FileOutputStream fos = new FileOutputStream("trackers.out");
+                        FileOutputStream fos = new FileOutputStream(dirHome+"trackers.out");
                             try (ObjectOutputStream oos = new ObjectOutputStream(fos)) {
                                 oos.writeObject(tsc);
                                 oos.flush();
@@ -1506,12 +1521,69 @@ private static String readFile(String path, Charset encoding)
                        
              
     }
+//    //send to server dashboard info about status online
+//    private void sendOnline(){
+//      
+//                    String url = connDefer.getHostDefer()+"/actions/online?id_user="+idCurrentUser;                                                      
+//                    URL obj;
+//                    try {
+//                        obj = new URL(url);
+//                        HttpURLConnection connection = (HttpURLConnection) obj.openConnection();
+//                        connection.setRequestMethod("GET");
+//                        BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+//                        String inputLine;
+//                        StringBuffer response = new StringBuffer();
+//                        while ((inputLine = in.readLine()) != null) {
+//                            response.append(inputLine);
+//                         }
+//                        in.close();                     
+//                        if(!response.toString().equals("true")){//                      
+//                            LOG.addHandler(handler);
+//                            LOG.log(Level.SEVERE, null, "status not send");                        
+//                        }
+//                        
+//                        } catch (MalformedURLException ex) {
+//                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+//                              LOG.addHandler(handler);
+//                              LOG.log(Level.SEVERE, null, ex);
+//                         } catch (ProtocolException ex) {
+//                            Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+//                              LOG.addHandler(handler);
+//                              LOG.log(Level.SEVERE, null, ex);
+//                         } catch (IOException ex) {
+//                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+//                               LOG.addHandler(handler);
+//                              LOG.log(Level.SEVERE, null, ex);
+//                        }
+//                       
+//             
+//    }
 @Override
     public void start(Stage primaryStage) throws FileNotFoundException, KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException, RedmineException {
      
         tiDialog.getDialogPane().getButtonTypes().setAll(okButtonType, cancelButtonType);
          
-        handler = new FileHandler("logger.log", 1000000, 7);
+        System.out.println(System.getProperty("user.home"));
+        dirHome = System.getProperty("user.home")+"/.questbook";
+        final File dir1 = new File(dirHome);
+          if(!dir1.exists()) {
+            if(dir1.mkdir()) {
+                System.out.println("Каталог " + dir1.getAbsolutePath()
+                        + " успешно создан.");
+                dirHome +="/";
+            } else {
+                System.out.println("Каталог " + dir1.getAbsolutePath()
+                        + " создать не удалось.");
+                dirHome ="";
+            }
+        } else {
+            System.out.println("Каталог " + dir1.getAbsolutePath()
+                        + " уже существует.");
+            dirHome +="/";
+        }
+        
+        
+        handler = new FileHandler(dirHome+"logger.log", 1000000, 7);
         handler.setFormatter(new SimpleFormatter());
 
 //get OS
@@ -1563,8 +1635,8 @@ private static String readFile(String path, Charset encoding)
                LOG.addHandler(handler);
                LOG.log(Level.SEVERE, null, ex);
            }
-        }
-    
+        }   
+          
         stage=primaryStage;
         descriptionStage.setTitle(PROGRAM_NAME);
         deferStage.setTitle("Отложить задачу");
@@ -1831,7 +1903,7 @@ private static String readFile(String path, Charset encoding)
         spentHoursCol.setCellValueFactory(new PropertyValueFactory<>("spentHoursCol"));
         priorityIdCol.setCellValueFactory(new PropertyValueFactory<>("priorityIdCol"));
     
-        rowList.add(new RowIssue("","","","","",""));
+        rowList.add(new RowIssue("","","","","","",""));
         table.setItems(rowList);
         table.getColumns().addAll(idCol, statusCol, priorityCol, themeCol, spentHoursCol, priorityIdCol);
         themeCol.setResizable(true);
@@ -1902,7 +1974,7 @@ private static String readFile(String path, Charset encoding)
         
         //try to open file with information about trackers and statuses we need
                     try {
-                        FileInputStream fis = new FileInputStream("trackers.out");
+                        FileInputStream fis = new FileInputStream(dirHome+"trackers.out");
                         ObjectInputStream oin = new ObjectInputStream(fis);
                         TrackersStatusesClass tsc = (TrackersStatusesClass) oin.readObject();
                         trackerIdStringList=tsc.getTrackers();
@@ -1913,7 +1985,7 @@ private static String readFile(String path, Charset encoding)
                         trackerIdString=trackerIdStringList.get(0);
                         statusIdString=statusIdStringList.get(0);
                         ObservableList<RowIssue> rowListnew = FXCollections.observableArrayList();
-                        rowListnew.add(new RowIssue("","","","","",""));
+                        rowListnew.add(new RowIssue("","","","","","",""));
                         rowIssueList.add(rowListnew);
                         for(int i=1;i<trackerIdStringList.size();i++)
                         {
@@ -1964,7 +2036,7 @@ private static String readFile(String path, Charset encoding)
                     }
                     //try to open file with information about connection
                     try {
-                        FileInputStream fis = new FileInputStream("conn.out");
+                        FileInputStream fis = new FileInputStream(dirHome+"conn.out");
                         ObjectInputStream oin = new ObjectInputStream(fis);
                         cc = (ConnectClass) oin.readObject();
                         tfHost.setText(cc.getHost());
@@ -2252,6 +2324,19 @@ private static String readFile(String path, Charset encoding)
 	@Override
 	public void run()
 	{
+            try {
+                        System.out.println("Now");
+                        if(mgr!=null){
+                            CustomFieldManager customFieldManager =mgr.getCustomFieldManager();
+                            List<CustomFieldDefinition> customFieldDefinitions = customFieldManager.getCustomFieldDefinitions();
+
+                            for (CustomFieldDefinition customFieldDefinition : customFieldDefinitions) {                        
+                             System.out.println( customFieldDefinition.getName());
+                            }
+                        }
+                     } catch (RedmineException ex) {
+                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                     }
               try{
                    changeIssueStatusFromNew(selectedIssue, ID_STATUS_IN_WORK,true);                                      
                       //send to rmdashboard action start
@@ -2785,7 +2870,7 @@ private static String readFile(String path, Charset encoding)
                         registry.register(new Scheme("https", sf, 443));                        
                         ClientConnectionManager ccm = new ThreadSafeClientConnManager(params, registry);                       
                         HttpClient client = new DefaultHttpClient(ccm, params);
-                        StringEntity paramsEntity =new StringEntity("{\"issue\": {\"project_id\": "+idProject+",\"subject\": \""+name+"\", \"assigned_to_id\": "+String.valueOf(idCurrentUser)+((!idSubproject.trim().isEmpty())?", \"parent_issue_id\":"+idSubproject:"")+"}}","UTF-8");                    
+                        StringEntity paramsEntity =new StringEntity("{\"issue\": {  \"custom_fields\":[{ \"value\":[5,4,3], \"id\":168}  ] ,    \"project_id\": "+idProject+",\"subject\": \""+name+"\", \"assigned_to_id\": "+String.valueOf(idCurrentUser)+((!idSubproject.trim().isEmpty())?", \"parent_issue_id\":"+idSubproject:"")+"}}","UTF-8");                    
                         request.addHeader("Content-type", "application/json; charset=utf-8");
                         request.setEntity(paramsEntity);
              
@@ -2929,7 +3014,7 @@ private static String readFile(String path, Charset encoding)
         Scene scene;
         
          try {
-                        FileInputStream fis = new FileInputStream("size.out");
+                        FileInputStream fis = new FileInputStream(dirHome+"size.out");
                         ObjectInputStream oin = new ObjectInputStream(fis);
                         SizesPositionClass spc = (SizesPositionClass) oin.readObject();
                         sceneWidth=spc.getWidth();
@@ -2961,7 +3046,7 @@ private static String readFile(String path, Charset encoding)
                 final Tab tab = new Tab();
         
                 ObservableList<RowIssue> rowListnew = FXCollections.observableArrayList();
-                rowListnew.add(new RowIssue("","","","","",""));
+                rowListnew.add(new RowIssue("","","","","","",""));
                 rowIssueList.add(rowListnew);
                 statusIdStringList.add("");
                 trackerIdStringList.add("");
@@ -3003,6 +3088,20 @@ private static String readFile(String path, Charset encoding)
                 tabs.getSelectionModel().select(tab);
       
             });
+        //timer for sending status online
+//        try{
+//              onlineTimer = new Timer();
+//              onlineTimer.schedule(new TimerTask() {
+//                          @Override
+//                          public void run() {
+//                              sendOnline();
+//                                            System.out.println("Онлайн!");
+//                          }
+//                      }, 5_000, 900_000);
+//                      } catch(Exception ex){
+//                        LOG.addHandler(handler);
+//                        LOG.log(Level.SEVERE, null, ex);
+//         }
     //поток для обработки перехода на новую вкладку
     class tabClick extends Thread
     {   
