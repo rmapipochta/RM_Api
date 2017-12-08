@@ -213,17 +213,17 @@ public class RM_1 extends Application {
     
     private final Stage dialogStage = new Stage();//stage to connect window
     private final VBox dialogVbox = new VBox(20);
-    private final TextField tfHost=new TextField();
-    private final TextField tfHostDefer=new TextField();
-    private final TextField tfPriorityDefer=new TextField();
+    private final TextField tfHost=new TextField("https://redmine.post.msdnr.ru");
+    private final TextField tfHostDefer=new TextField("http://rmdash.post.msdnr.ru");
+    private final TextField tfPriorityDefer=new TextField("3");
     private final TextField tfKey=new TextField();
-    private final TextField tfSIW=new TextField();
-    private final TextField tfSN=new TextField();
-    private final TextField tfSF=new TextField();
-    private final TextField tfSD=new TextField();
-    private final TextField tfSVSH=new TextField();
-    private final TextField tfAD=new TextField();
-    private final TextField tfAE=new TextField();
+    private final TextField tfSIW=new TextField("3");
+    private final TextField tfSN=new TextField("2");
+    private final TextField tfSF=new TextField("4");
+    private final TextField tfSD=new TextField("30");
+    private final TextField tfSVSH=new TextField("29");
+    private final TextField tfAD=new TextField("11");
+    private final TextField tfAE=new TextField("10");
     private final Label lbHost=new Label("Хост");
     private final Label lbHostDefer=new Label("Хост отложенных");
     private final Label lbPriorityDefer=new Label("Ид приоритета для отложенных");
@@ -545,7 +545,7 @@ public class RM_1 extends Application {
                         LOG.log(Level.SEVERE, null, ex);
                     }
                     writeToTrackersOut();
-                    if(selectedIssue!=0&&timeStartInWork!=0)
+                    if(selectedIssue!=0&&timeStartInWork!=0&& useDeferHost)
                        sendAction(String.valueOf(selectedIssue),"Пауза");
                 saveSpentHours();
                 workTimer.cancel();
@@ -1123,20 +1123,21 @@ public class RM_1 extends Application {
                         custClass = (CustomizeClass) oin.readObject(); 
                         if(custClass!=null && custClass.isOk())
                         {
-                            ID_STATUS_IN_WORK=3;
-                            ID_STATUS_NEW=2;
-                            ID_STATUS_FINISHED=4;
-                            ID_STATUS_DEFER=30;
-                            ID_STATUS_VALUATION_SPENT_TIME=29;
-                            ID_ACTIVITY_DEVELOPMENT=11;
-                            ID_ACTIVITY_ENGINEERING=10;
+                            ID_STATUS_IN_WORK=custClass.getID_STATUS_IN_WORK();
+                            ID_STATUS_NEW=custClass.getID_STATUS_NEW();
+                            ID_STATUS_FINISHED=custClass.getID_STATUS_FINISHED();
+                            ID_STATUS_DEFER=custClass.getID_STATUS_DEFER();
+                            ID_STATUS_VALUATION_SPENT_TIME=custClass.getID_STATUS_VALUATION_SPENT_TIME();
+                            ID_ACTIVITY_DEVELOPMENT=custClass.getID_ACTIVITY_DEVELOPMENT();
+                            ID_ACTIVITY_ENGINEERING=custClass.getID_ACTIVITY_ENGINEERING();
                             return true;
                         }
                         
                         } catch (FileNotFoundException | ClassNotFoundException ex) { 
                             LOG.addHandler(handler);
-                            LOG.log(Level.SEVERE, null, ex);
+                            LOG.log(Level.SEVERE, null, ex);         
                             return false;
+                           
                     }
         return false;
     }
@@ -1400,6 +1401,7 @@ private static String readFile(String path, Charset encoding)
                     updateTableIssues(); 
                     multilineRowTheme();              
                     URL obj;
+                    if(useDeferHost)
                     sendAction(String.valueOf(idDeferIssue),"Отложил");
                     try {
                         obj = new URL(url);
@@ -2023,7 +2025,7 @@ private static String readFile(String path, Charset encoding)
                             tabs.getTabs().add(tab);
                         }
                         } catch (FileNotFoundException | ClassNotFoundException ex) { 
-                            trackerIdString="1|2|3|4|14";
+                            trackerIdString="1|2|3|4|14|20";
                             statusIdString="1|2|3|6|8|9|21|25|27|29";
                             idProject="";
                             idSubproject="";
@@ -2150,6 +2152,7 @@ private static String readFile(String path, Charset encoding)
                if((mgr!=null)&&(table.getSelectionModel().getSelectedItem()!=null))
                {
                    int idFinishedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+                   if(useDeferHost)
                    sendAction(String.valueOf(idFinishedIssue),"Завершил");
                    //if issue is in work now
                    if((selectedIssue!=0)&&(timeStartInWork!=0)&&(selectedIssue==idFinishedIssue)){
@@ -2291,7 +2294,7 @@ private static String readFile(String path, Charset encoding)
                    startButton.setGraphic(new ImageView(startImage));
                    startButton.setTooltip(new Tooltip("Запусить задачу"));
                    
-                   if(selectedIssue!=0&&timeStartInWork!=0)
+                   if(selectedIssue!=0&&timeStartInWork!=0&& useDeferHost)
                        sendAction(String.valueOf(selectedIssue),"Пауза");
                   saveSpentHours();
                   //stop timer
@@ -2324,22 +2327,23 @@ private static String readFile(String path, Charset encoding)
 	@Override
 	public void run()
 	{
-            try {
-                        System.out.println("Now");
-                        if(mgr!=null){
-                            CustomFieldManager customFieldManager =mgr.getCustomFieldManager();
-                            List<CustomFieldDefinition> customFieldDefinitions = customFieldManager.getCustomFieldDefinitions();
-
-                            for (CustomFieldDefinition customFieldDefinition : customFieldDefinitions) {                        
-                             System.out.println( customFieldDefinition.getName());
-                            }
-                        }
-                     } catch (RedmineException ex) {
-                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-                     }
+//            try {
+//                        System.out.println("Now");
+//                        if(mgr!=null){
+//                            CustomFieldManager customFieldManager =mgr.getCustomFieldManager();
+//                            List<CustomFieldDefinition> customFieldDefinitions = customFieldManager.getCustomFieldDefinitions();
+//
+//                            for (CustomFieldDefinition customFieldDefinition : customFieldDefinitions) {                        
+//                             System.out.println( customFieldDefinition.getName());
+//                            }
+//                        }
+//                     } catch (RedmineException ex) {
+//                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+//                     }
               try{
                    changeIssueStatusFromNew(selectedIssue, ID_STATUS_IN_WORK,true);                                      
                       //send to rmdashboard action start
+                      if(useDeferHost)
                       sendAction(String.valueOf(selectedIssue),"Запустил");
               } catch(Exception ex){}
             Platform.runLater(new Runnable() {
@@ -2426,7 +2430,7 @@ private static String readFile(String path, Charset encoding)
                       Button button = (Button) e.getSource();
                       button.setGraphic(new ImageView(startImage));
                       button.setTooltip(new Tooltip("Запусить задачу"));
-                      
+                      if(useDeferHost)
                        sendAction(String.valueOf(markedIssue),"Пауза");
 
                       //update timer
@@ -2727,6 +2731,7 @@ private static String readFile(String path, Charset encoding)
         trackerButton.setOnAction((final ActionEvent e) -> {
             if(mgr!=null)
             {
+               
                 trackersStackPane = new StackPane();
                 try {
                     checkboxStatuses.clear();
@@ -2870,7 +2875,8 @@ private static String readFile(String path, Charset encoding)
                         registry.register(new Scheme("https", sf, 443));                        
                         ClientConnectionManager ccm = new ThreadSafeClientConnManager(params, registry);                       
                         HttpClient client = new DefaultHttpClient(ccm, params);
-                        StringEntity paramsEntity =new StringEntity("{\"issue\": {  \"custom_fields\":[{ \"value\":[5,4,3], \"id\":168}  ] ,    \"project_id\": "+idProject+",\"subject\": \""+name+"\", \"assigned_to_id\": "+String.valueOf(idCurrentUser)+((!idSubproject.trim().isEmpty())?", \"parent_issue_id\":"+idSubproject:"")+"}}","UTF-8");                    
+//                        \"custom_fields\":[{ \"value\":[5,4,3], \"id\":168}  ] , 
+                        StringEntity paramsEntity =new StringEntity("{\"issue\": {    \"project_id\": "+idProject+",\"subject\": \""+name+"\", \"assigned_to_id\": "+String.valueOf(idCurrentUser)+((!idSubproject.trim().isEmpty())?", \"parent_issue_id\":"+idSubproject:"")+"}}","UTF-8");                    
                         request.addHeader("Content-type", "application/json; charset=utf-8");
                         request.setEntity(paramsEntity);
              
@@ -2948,6 +2954,7 @@ private static String readFile(String path, Charset encoding)
                 result.ifPresent(name -> {
                     if(!name.trim().isEmpty())
                     {
+                        if(useDeferHost)
                         sendAction(String.valueOf(markedIssue),"Пауза");
                         //change image in tray
                         BufferedImage trayImage = SwingFXUtils.fromFXImage(stopImage24,null);             
