@@ -128,6 +128,8 @@ import org.apache.http.params.HttpProtocolParams;
 import org.apache.http.protocol.HTTP;
 import org.apache.http.conn.ssl.SSLSocketFactory;
 import org.apache.http.entity.StringEntity;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import rm_1.redmineapi.CustomFieldManager;
 import rm_1.redmineapi.Include;
 import rm_1.redmineapi.Params;
@@ -137,7 +139,13 @@ import rm_1.redmineapi.bean.Journal;
 import rm_1.redmineapi.bean.Project;
 import rm_1.redmineapi.bean.TimeEntry;
 import rm_1.redmineapi.bean.Tracker;
-
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.lang.reflect.Type;
+import java.util.concurrent.locks.ReentrantLock;
+//
+//import akka.actor.*;
+//import akka.wamp.client.japi.*;
 /**
  *
  * @author post
@@ -157,10 +165,12 @@ public class RM_1 extends Application {
     private int ID_ACTIVITY_ENGINEERING=0;//10;
     private static final String ICON_IMAGE_LOC =
             "http://icons.iconarchive.com/icons/scafer31000/bubble-circle-3/16/GameCenter-icon.png";
-    private static final String PROGRAM_NAME= "QuestBook v3.1.7";
+    private static final String PROGRAM_NAME= "QuestBook v4.0.3";
     private long timeStartInWork=0;//time when issue was started
     private int selectedIssue=0;//id of selected issue
+    private String selectedIssueName="";//name of selected issue
     private String markedIssue="";//issue which marked to change color in table pf selected Issue
+    private String markedIssueName="";//issue which marked to change color in table pf selected Issue
     private int issueIdSpentHours=0;//finished issue which need to enter spent hours
     private int idCurrentUser=0;//id of user who connected
     private String idProject ="";
@@ -172,11 +182,11 @@ public class RM_1 extends Application {
     private Timer notificationTimer;
     private Timer workTimer = new Timer();
 //    private Timer onlineTimer = new Timer(); //sending http request that user online
-    private Issue issueByIdWithDescription;//issue which selected to view description and comments
+    private int issueByIdWithDescription;//issue which selected to view description and comments
     private String uri="";//url of host
     private String apiAccessKey;//uses's key to connect to api
-    private List<Issue> issues=null;//list of user's issues                 
-    private List<Issue> issuesAll=null;//list of all user's issues                 
+    private List<IssueRM> issues=new ArrayList();//list of user's issues                 
+    private List<Issue> issuesAll=new ArrayList();//list of all user's issues                 
     private RedmineManager mgr;
     private final List<ObservableList<RowIssue>> rowIssueList=new ArrayList();
     private final TableView<RowIssue> table = new TableView<>();//table with issues
@@ -241,17 +251,21 @@ public class RM_1 extends Application {
     private final Stage trackersStage = new Stage();//stage to view trackers and statuses
     private final List<CheckBox> checkboxTrackers = new ArrayList();
     private final List<CheckBox> checkboxStatuses = new ArrayList();
-    private List<IssueStatus> statusesList = null;
-    private List<Tracker> trackersList = null;
+    private List<IssueStatus> statusesList = new ArrayList();
+    private List<Tracker> trackersList = new ArrayList();
+    private List<JournalRM> journalsList = new ArrayList();
+    private String descriptionIssue="";
     private final Button selectTrackersButton = new Button();
     private StackPane trackersStackPane;   
+    private StackPane trackersRootStackPane;   
+    private ScrollPane trackersScrollPane;   
     private StackPane browserStackPane;   
     private final Stage browserStage = new Stage();//stage to select browser
     private final CheckBox defaultBrowserCheckBox = new CheckBox("По умолчанию");
     private final Stage projectStage = new Stage();//stage to select project
     private final TextField tfSubproject = new TextField();
     private final ToggleGroup projectsToggleGroup = new ToggleGroup();
-    private List<Project> projectsList = null;
+    private List<ProjectRM> projectsList = new ArrayList();
     private final Button selectProjectButton = new Button();
     private final ScrollPane projectsScroll = new ScrollPane();
     private final VBox projectsVbox = new VBox(5);
@@ -310,7 +324,17 @@ public class RM_1 extends Application {
     private String selectedBrowser = "";
     private boolean defaultBrowser = true;
     private boolean useDeferHost = false;
-    private String userName="";
+    private String userName="";  
+    private LockObject spentHours = new LockObject();
+    private LockObject changeStatus = new LockObject();
+    private LockObject authorize = new LockObject();
+    private LockObject newIssue = new LockObject();
+    private LockObject newComment = new LockObject();
+    private LockObject deferIssue = new LockObject();
+    private LockObject sendAction = new LockObject();
+    private boolean showAlert=false;
+    private JSONArray  dataMessage;
+    private WebsocketClientEndpoint clientEndPoint;
     
       private void connectFunc() throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException{
       if((!tfHost.getText().trim().isEmpty())&&(!tfKey.getText().trim().isEmpty()))
@@ -360,59 +384,396 @@ public class RM_1 extends Application {
                         LOG.addHandler(handler);
                         LOG.log(Level.SEVERE, null, ex);
                     }
-                        try{
-                            //create connection
-                        mgr = RedmineManagerFactory.createWithApiKey(uri, apiAccessKey,client);
-                        idCurrentUser = mgr.getUserManager().getCurrentUser().getId();
-                        userName=mgr.getUserManager().getCurrentUser().getFullName();
-                         try {
-                            userName=URLEncoder.encode(userName, "UTF-8");
-                            } catch (UnsupportedEncodingException ex) {
-                            LOG.addHandler(handler);
-                            LOG.log(Level.SEVERE, null, ex);
-                        }
-                        setTableIssues();
-                    
-                     Params params2 = new Params()
-                            .add("set_filter", "1")
-                            .add("assigned_to_id", String.valueOf(idCurrentUser));//mgr.getUserManager().getCurrentUser().getId()));
 
-                    try {
-                        issuesAll = mgr.getIssueManager().getIssues(params2).getResults();
-            
-                    } catch (RedmineException ex) {
-                        LOG.addHandler(handler);
-                        LOG.log(Level.SEVERE, null, ex);
-                    }
+                if(clientEndPoint==null || !clientEndPoint.userSession.isOpen())
+                //via websocket
+                try {
+                   // open websocket
+                    clientEndPoint = new WebsocketClientEndpoint(new URI("ws://rmdash.post.msdnr.ru:8080"));
+                    clientEndPoint.addMessageHandler(new WebsocketClientEndpoint.MessageHandler() {
+                    public void handleMessage(String message) {                                           
+                            JSONArray dataWS = new JSONArray();
+                            String response="";
+                            dataMessage= new JSONArray();
+                            JSONObject msg =new JSONObject();
+                            try{
+                                dataWS=new JSONArray(message);
+                                JSONArray dataWSMessage =  dataWS.getJSONArray(2); //data of message                            
+                                msg = dataWSMessage.getJSONObject(0); //responce command                               
+                                response=msg.getString("message");
+                                dataMessage = msg.getJSONArray("data");//responce command
+                            }
+                            catch(Exception ex){ 
+                                 System.out.println("Exception in json"+ ex.getMessage());
+                                 response=message;
+                            }                                 
+                            
+                              switch (response) {
+                                case "issues":  
+                                       System.out.println("ISSUES: "+dataMessage.toString());
+                                        Gson gsonIssues = new Gson();
+                                        Type typeIssues = new TypeToken<List<IssueRM>>(){}.getType();                                
+                                        issues.addAll( gsonIssues.fromJson(dataMessage.toString(), typeIssues));
+                                        synchronized (issues) {
+                                            //trackers=dataMessage.toString();
+                                            issues.notifyAll();
+                                            System.out.println("notifyAll for issues called!");
+                                         }                                
+                                         
+                                       break;
+                                 case "journals":  
+                                       System.out.println("get_journals: "+dataMessage.toString());
+                                        Gson gsonJournals = new Gson();
+                                        Type typeJournals = new TypeToken<List<JournalRM>>(){}.getType();                                
+                                        journalsList.addAll( gsonJournals.fromJson(dataMessage.toString(), typeJournals));
+                                        synchronized (journalsList) {
+                                            //trackers=dataMessage.toString();
+                                            descriptionIssue=msg.getString("description");
+                                            journalsList.notifyAll();
+                                            System.out.println("notifyAll for get_journals called!");
+                                         }                                
+                                          
+                                       break; 
+                                 case "new_journal":  
+                                       System.out.println("new_journal: "+dataMessage.toString());
+                                      
+                                         synchronized (newComment) {                                                                 
+                                            newComment.unlock();                                            
+                                            newComment.notifyAll();
+                                            System.out.println("notifyAll for newComment called!");
+                                         }                                 
+                                          
+                                       break;  
+                                  case "defer_issue":  
+                                       System.out.println("defer_issue: "+dataMessage.toString());
+                                      
+                                         synchronized (deferIssue) {                                                                 
+                                            deferIssue.unlock();                                            
+                                            deferIssue.notifyAll();
+                                            System.out.println("notifyAll for deferIssue called!");
+                                         }                                 
+                                          
+                                       break;       
+                                  case "action":  
+                                       System.out.println("action: "+dataMessage.toString());                                     
+                                         synchronized (sendAction) {                                                                 
+                                            sendAction.unlock();                                            
+                                            sendAction.notifyAll();
+                                            System.out.println("notifyAll for sendAction called!");
+                                         }                                 
+                                          
+                                       break;  
+                                        case "defers":  
+                                       System.out.println("defers: "+dataMessage.toString());
+                                       System.out.println("defers: "+message.toString());
+                                       break;    
+                                 case "new_issue":  
+                                       System.out.println("new_issue: "+dataMessage.toString());  
+                                        showAlert=false;
+                                         synchronized (newIssue) {  
+                                             if(!newIssue.isLocked())
+                                                 showAlert=true;
+                                            newIssue.unlock();                                           
+                                            newIssue.notifyAll();
+                                            System.out.println("notifyAll for newIssue called!");
+                                         }          
+                                        Platform.runLater(new Runnable() {
+                                          @Override
+                                          public void run() {  
+                                              if(showAlert){
+                                                  Alert alert = new Alert(AlertType.INFORMATION);
+                                                  alert.setTitle("Новая задача");
+                                                  alert.setHeaderText(null);
+                                                  alert.setResizable(true);
+                                                  alert.setContentText(dataMessage.getJSONObject(0).getString("subject"));
+                                                  alert.showAndWait(); 
+                                              }
+                                              setTableIssues();
+                                                if(!markedIssue.trim().isEmpty()&&timeStartInWork!=0)
+                                                    updateTableIssues();
 
-                  disableButtons(false);
+                                          }
+                                        });                                       
+                                         System.out.println("newIssue: "+dataMessage.toString());                                                                       
+                                       break;
+                                 case "edit_issue":  
+                                       System.out.println("edit_issue: "+dataMessage.toString());                                                           
+                                          boolean contains=false;
+                                      
+                                             int editedIssue=dataMessage.getJSONObject(0).getInt("id");
+                                          for (int i = 0; i < table.getItems().size(); i++) {
+                                                if (table.getItems().get(i).getIdCol().equals(String.valueOf(editedIssue))) { 
+                                                   contains=true; 
+                                                }
+                                          }
+                                          if(!contains)
+                                          Platform.runLater(new Runnable() {
+                                            @Override
+                                            public void run() { 
+                                                   Alert alert = new Alert(AlertType.INFORMATION);
+                                                    alert.setTitle("Новая задача");
+                                                    alert.setHeaderText(null);
+                                                    alert.setResizable(true);
+                                                    alert.setContentText(dataMessage.getJSONObject(0).getString("subject"));
+                                                    alert.showAndWait(); 
+                                                setTableIssues();
+                                                  if(!markedIssue.trim().isEmpty()&&timeStartInWork!=0)
+                                                      updateTableIssues();
+                                            }
+                                          });
+                                          contains=false;                               
+                                       break;
+                                case "statuses":  
+                                Gson gsonStatuses = new Gson();
+                                Type typeStatuses = new TypeToken<List<IssueStatus>>(){}.getType();                                
+                                statusesList.addAll(gsonStatuses.fromJson(dataMessage.toString(), typeStatuses));                                
+                                        synchronized (statusesList) {                                          
+                                            statusesList.notifyAll();
+                                            System.out.println("notifyAll for statuses called!");
+                                         }                                
+                                         System.out.println("STATUSES: "+dataMessage.toString());
+                                       break;       
+                                case "trackers":  
+                                    Gson gsonTrackers = new Gson();
+                                    Type typeTrackers = new TypeToken<List<Tracker>>(){}.getType();                                
+                                    trackersList.addAll( gsonTrackers.fromJson(dataMessage.toString(), typeTrackers));
+                                        synchronized (trackersList) {
+                                            trackersList.notifyAll();
+                                            System.out.println("notifyAll for trackers called!");
+                                         }                                
+                                         System.out.println("TRACKERS: "+dataMessage.toString());
+                                       break; 
+                                case "projects":  
+                                    Gson gsonProjects = new Gson();
+                                    Type typeProjects = new TypeToken<List<ProjectRM>>(){}.getType();                                
+                                    projectsList.addAll( gsonProjects.fromJson(dataMessage.toString(), typeProjects));
+                                        synchronized (projectsList) {
+                                            //trackers=dataMessage.toString();
+                                            projectsList.notifyAll();
+                                            System.out.println("projectsList for trackers called!");
+                                         }                                
+                                         System.out.println("PROJECTS: "+dataMessage.toString());
+                                       break; 
+                                case "add_spent_hours":  
+                                        synchronized (spentHours) {
+                                            spentHours.unlock();                                           
+                                            spentHours.notifyAll();
+                                            System.out.println("notifyAll for spentHours called!");
+                                         }                                
+                                         System.out.println("spentHours: "+dataMessage.toString());
+                                       break;  
+                                case "change_status":  
+                                       System.out.println("CHANGE STATUS: "+dataMessage.toString());
+                                        synchronized (changeStatus) {
+                                            changeStatus.unlock();
+                                            changeStatus.notifyAll();
+                                            System.out.println("changeStatus for spentHours called!");
+                                         }                                
+                                         
+                                       break;  
+                                case "No_rm":  
+                                        Platform.runLater(new Runnable() {
+                                            @Override
+                                            public void run() {                          
+                                                Alert alert = new Alert(AlertType.INFORMATION);
+                                                alert.setTitle("Ошибка соединения с редмайном!");
+                                                alert.setHeaderText(null);
+                                                alert.setResizable(true);
+                                                alert.setContentText("Редмайн не отвечает!");
+                                                alert.showAndWait(); 
+                                                disableButtons(true);
+                                            }
+                                            }); 
+                                       break; 
+                                case "authorize":  
+                                        userName=dataMessage.getJSONObject(0).getString("name");
+                                        System.out.println("username: "+ userName);
+                                         idCurrentUser =dataMessage.getJSONObject(0).getInt("id");
+                                          synchronized (authorize) {
+                                            //trackers=dataMessage.toString();
+                                            if(idCurrentUser!=0)
+                                            authorize.unlock();
+                                            
+                                            authorize.notifyAll();
+                                            System.out.println("notifyAll for authorize called!");
+                                         }                                
+                                         
+                                         System.out.println("AUTHORIZE: "+message);
+                                       
+                                       break;                                     
+                                default: 
+                                    System.out.println("def "+message);
+                                    if(message.contains("new_issue"))
+                                    {
+                                        System.out.println("contains new issue: "+dataMessage.toString());                                                           
+                                             
+                                              Platform.runLater(new Runnable() {
+                                                @Override
+                                                public void run() {
+                                                   JSONArray dataDefer=new JSONArray(message);
+                                                   JSONObject nameDefer=new JSONObject(dataDefer.getString(2));
+                                                      Alert alert = new Alert(AlertType.INFORMATION);
+                                                    alert.setTitle("Задача вернулась из отложенных ");
+                                                    alert.setHeaderText(null);
+                                                    alert.setResizable(true);
+                                                    alert.setContentText(nameDefer.getJSONObject("data").getString("issue"));
+                                                    alert.showAndWait(); 
+                                                    setTableIssues();
+                                                      if(!markedIssue.trim().isEmpty()&&timeStartInWork!=0)
+                                                          updateTableIssues();
+                                                }
+                                              });
+                                    }
+                                    break;
+                             }
+                                
+
+                                
+                            Platform.runLater(new Runnable() {
+                            @Override
+                            public void run() {
+ 
+                            }
+                            });                   
                         }
-                        catch(RedmineException ex){
-                            //if connection failed disable buttons
-                            disableButtons(true);
-                        }
-                        
-                }
+                    });
+
+            // send message to websocket
+           if( clientEndPoint.userSession.isOpen()){
+               
+            clientEndPoint.sendMessage("[5,\""+tfKey.getText()+"\"]"); 
+            clientEndPoint.sendMessage("[5,\"redmine\"]");        
           
-                    dialogStage.hide();                
+             synchronized (authorize) {
+                            authorize.lock();                                 
+                            if( clientEndPoint.userSession.isOpen()){
+                                clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"authorize\",\"api_key\":\""+tfKey.getText()+"\" }]]");  
+                                  while (authorize.isLocked()) {
+                                    System.out.println("authorize is locked...");
+                                     try {
+                                         authorize.wait(5000);                                         
+                                         if(authorize.isLocked()){
+                                                Alert alert = new Alert(AlertType.INFORMATION);
+                                                alert.setTitle("Ошибка авторизации!");
+                                                alert.setHeaderText(null);
+                                                alert.setResizable(true);
+                                                alert.setContentText("Пользователь с таким ключом не найден!");
+                                                alert.showAndWait(); 
+                                                disableButtons(true);
+                                            break;
+                                         }
+                                     } catch (InterruptedException ex) {
+                                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                                     }                            
+                                }  
+                                System.out.println("Забыли все и вышли из цикла");
+                               
+                            }
+                   } 
+              if(idCurrentUser!=0){
+                  clientEndPoint.sendMessage("[5,\""+String.valueOf(idCurrentUser)+"\"]"); 
+                  disableButtons(false);
+                  setTableIssues();
+                  dialogStage.hide();
+              }
+
+           }
+  
+
+        } 
+       
+            catch (URISyntaxException ex) {
+
+                System.out.println("URISyntaxException exception: " + ex.getMessage());
+            }
+            catch (RuntimeException ex) {
+                
+                     Alert alert = new Alert(AlertType.INFORMATION);
+                                    alert.setTitle("Проблема");
+                                    alert.setHeaderText(null);
+                                    alert.setResizable(true);
+                                    alert.setContentText("Не удается подключиться к серверу :(");
+                                    alert.showAndWait();  
+                                    disableButtons(true);
+                System.out.println("runtime exception: " + ex.getMessage());
+            }
+        else if(clientEndPoint.userSession.isOpen())
+        {
+            
+             clientEndPoint.sendMessage("[5,\"redmine\"]");        
+             clientEndPoint.sendMessage("[5,\""+tfKey.getText()+"\"]");        
+          
+             synchronized (authorize) {
+                            authorize.lock();                                 
+                            if( clientEndPoint.userSession.isOpen()){
+                                clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"authorize\",\"api_key\":\""+tfKey.getText()+"\" }]]");  
+                                  while (authorize.isLocked()) {
+                                    System.out.println("authorize is locked...");
+                                     try {
+                                         authorize.wait(5000);                                         
+                                         if(authorize.isLocked()){
+                                                Alert alert = new Alert(AlertType.INFORMATION);
+                                                alert.setTitle("Ошибка авторизации!");
+                                                alert.setHeaderText(null);
+                                                alert.setResizable(true);
+                                                alert.setContentText("Пользователь с таким ключом не найден!");
+                                                alert.showAndWait(); 
+                                                disableButtons(true);
+                                            break;
+                                         }
+                                     } catch (InterruptedException ex) {
+                                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                                     }                            
+                                }  
+                                System.out.println("Забыли все и вышли из цикла");
+                               
+                            }
+                   } 
+              if(idCurrentUser!=0){
+                  clientEndPoint.sendMessage("[5,\""+String.valueOf(idCurrentUser)+"\"]"); 
+                  disableButtons(false);
+                  setTableIssues();
+                  dialogStage.hide();
+              }
+            
+        }
+                        
+            }
+         
       }
+      
+
     private void addExtraSpentHours(String name){
        if((issueIdSpentHours!=0)&&(!name.trim().isEmpty())&&Float.parseFloat(name.replaceAll(",",".").replaceAll(":","."))>0)
        {
-           TimeEntry TE=new TimeEntry();          
-           TE.setHours(Float.parseFloat(convertMinutesToSpentHours(name)));
-           TE.setIssueId(issueIdSpentHours);
-           TE.setActivityId(ID_ACTIVITY_ENGINEERING); 
-           try {
-                mgr.getTimeEntryManager().createTimeEntry(TE);
-               } catch (RedmineException ex) {
-                   alert.setTitle("Внимание");
-                   alert.setHeaderText(null);
-                   alert.setContentText("Трудозатраты не удалось сохранить! Задача: " +issueIdSpentHours+" Трудозатраты: "+TE.getHours());
-                   alert.showAndWait();
-                   LOG.addHandler(handler);
-               LOG.log(Level.SEVERE, null, ex);
-               }
+                     
+                  synchronized (spentHours) {
+                            spentHours.lock();
+                                 
+                            if( clientEndPoint.userSession.isOpen()){
+                                clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"add_spent_hours\",\"hours\":"+convertMinutesToSpentHours(name)+",\"issue_id\":"+String.valueOf(issueIdSpentHours)+" ,\"user_id\":"+String.valueOf(idCurrentUser)+" }]]"); 
+                                while (spentHours.isLocked()) {
+                                    System.out.println("spentHours is locked...");
+                                     try {
+                                         spentHours.wait(5000);
+                                         
+                                         if(spentHours.isLocked()){
+                                            alert.setTitle("Внимание");
+                                           alert.setHeaderText(null);
+                                           alert.setContentText("Трудозатраты не удалось сохранить! Задача: " +issueIdSpentHours+" Трудозатраты: "+convertMinutesToSpentHours(name));
+                                           alert.showAndWait();
+                                           LOG.addHandler(handler);
+                                            break;
+                                         }
+                                     } catch (InterruptedException ex) {
+                                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                                     }                            
+                                }  
+                                System.out.println("Забыли все и вышли из цикла");
+                               
+                            }
+                   }  
+    
            issueIdSpentHours=0;
        }
     }
@@ -428,39 +789,37 @@ public class RM_1 extends Application {
                         //if spent more than one minute 
                                if(TimeUnit.MILLISECONDS.toMinutes(allTime)>=1)
                                {
-                           long hours=TimeUnit.MILLISECONDS.toHours(allTime);
-                           long minutes=TimeUnit.MILLISECONDS.toMinutes(allTime)-TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(allTime));
+                                    long hours=TimeUnit.MILLISECONDS.toHours(allTime);
+                                    long minutes=TimeUnit.MILLISECONDS.toMinutes(allTime)-TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(allTime));
+                                    
+                                    String time =String.valueOf(hours)+":"+((minutes<10)?"0"+String.valueOf(minutes):String.valueOf(minutes));
+                                    issueIdSpentHours=selectedIssue;
+                                    addExtraSpentHours(time);
 
-                               int min=(int)Math.ceil((float)minutes/60*100);
-                               String s=String.valueOf(hours)+"."+((min<10)?"0"+String.valueOf(min):String.valueOf(min));                               
-                               Float f=Float.parseFloat(s);
-                          //create timentry for selected issue and set spent time
-                       TimeEntry TE=new TimeEntry();
-                       TE.setHours(f);
-                       TE.setIssueId(selectedIssue);
-                       TE.setActivityId(ID_ACTIVITY_DEVELOPMENT);
-                            try {
-                                mgr.getTimeEntryManager().createTimeEntry(TE);
-                                String spentHoursStringBuf=convertSpentHours(mgr.getIssueManager().getIssueById(selectedIssue).getSpentHours().toString());
-                                spentHoursMap.replace(selectedIssue,spentHoursStringBuf);
-                                for (int i = 0; i < table.getItems().size(); i++) {
-                                   if (Integer.valueOf(table.getItems().get(i).getIdCol()) == selectedIssue) {                                    
-                                       rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).setSpentHoursCol(spentHoursStringBuf);
-
-                                       priorityIdCol.setSortType(TableColumn.SortType.DESCENDING);                                   
-                                       table.setItems(rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()));
-                                       table.getSortOrder().add(priorityIdCol);
-                                       break;
+                                    for (int i = 0; i < table.getItems().size(); i++) {
+                                       if (Integer.valueOf(table.getItems().get(i).getIdCol()) == selectedIssue) {   
+                                           
+                                           Float spentHoursBefore;
+                                           if(!rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).getSpentHoursCol().toString().equals("Новая")){
+                                               System.out.println("Не НОВАЯЯЯЯЯ"+rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).getSpentHoursCol());
+                                            spentHoursBefore= Float.parseFloat(convertMinutesToSpentHours(rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).getSpentHoursCol()));
+                                             System.out.println(String.valueOf(spentHoursBefore));
+                                           }
+                                            else 
+                                           {
+                                               spentHoursBefore=Float.parseFloat("0");                                           
+                                           }
+                                           String spentHoursStringBuf=convertSpentHours(String.valueOf(Float.parseFloat(convertMinutesToSpentHours(time))+spentHoursBefore));
+                                            spentHoursMap.replace(selectedIssue,spentHoursStringBuf);
+                                           rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).setSpentHoursCol(spentHoursStringBuf);
+                                            
+                                           priorityIdCol.setSortType(TableColumn.SortType.DESCENDING);                                   
+                                           table.setItems(rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()));
+                                           table.getSortOrder().add(priorityIdCol);
+                                           break;
+                                       }
                                    }
-                               }
-                           } catch (RedmineException ex) {
-                               alert.setTitle("Внимание");
-                               alert.setHeaderText(null);
-                               alert.setContentText("Трудозатраты не удалось сохранить! Задача: " +selectedIssue+" Трудозатраты: "+TE.getHours());
-                               alert.showAndWait();
-                               LOG.addHandler(handler);
-                                LOG.log(Level.SEVERE, null, ex);
-                            }
+                                    
                                }
                    }
     }
@@ -545,11 +904,11 @@ public class RM_1 extends Application {
                         LOG.log(Level.SEVERE, null, ex);
                     }
                     writeToTrackersOut();
-                    if(selectedIssue!=0&&timeStartInWork!=0&& useDeferHost)
-                       sendAction(String.valueOf(selectedIssue),"Пауза");
+//                    if(selectedIssue!=0&&timeStartInWork!=0&& useDeferHost)
+                       sendAction(String.valueOf(selectedIssue),selectedIssueName,"Пауза");
                 saveSpentHours();
                 workTimer.cancel();
-                pauseTimer();
+//                pauseTimer();
                 Platform.exit();
                 System.exit(0);
                 tray.remove(trayIcon);
@@ -562,9 +921,7 @@ public class RM_1 extends Application {
             popup.add(exitItem);
             trayIcon.setPopupMenu(popup);
 
-            // create a timer which periodically displays a notification message.
-            resumeTimer();
-           
+
             // add the application tray icon to the system tray.
             tray.add(trayIcon);
             
@@ -644,30 +1001,56 @@ public class RM_1 extends Application {
         cell.textProperty().bind(cell.itemProperty()); // in general might need to subclass TableCell and override updateItem(...) here
         cell.setOnMouseClicked((MouseEvent event) -> {//set action for click on table (column - themeCol)
             if (event.getButton() == MouseButton.SECONDARY) {//set action for right button click
+                             
                 //select Issue for Subsequent work
+                
                 int indexRow = table.getSelectionModel().getSelectedIndex();
                 if(selectedIssue==0||timeStartInWork==0)
                 {
                     selectedIssue=Integer.parseInt(table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString());
+                    selectedIssueName=table.getColumns().get(3).getCellObservableValue(indexRow).getValue().toString();
+                    
                     markedIssue=table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
+                    markedIssueName=selectedIssueName;
                 }
+                
+                 int issueId=Integer.parseInt(table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString());
+                 issueByIdWithDescription=issueId;
+             synchronized (journalsList) {
+                            journalsList.clear();
+                            descriptionIssue="";
+                            if( clientEndPoint.userSession.isOpen()){                               
+                             clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"get_journals\",\"issue_id\":"+String.valueOf(issueId)+" ,\"user_id\":"+String.valueOf(idCurrentUser)+" }]]"); 
+  
+                                while (journalsList.isEmpty()) {
+                                    System.out.println("journals is empty...");
+                                     try {
+                                         journalsList.wait(5000);
+                                         if(journalsList.isEmpty()){
+                                            System.out.println("Комментарии не получили");                                            
+                                            break;
+                                        }
+                                     } catch (InterruptedException ex) {
+                                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                                     }                            
+                                }  
+                               
+                            }
+                   }      
                 //open window with description and comments of issue
-                int issueId=Integer.parseInt(table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString());
+               
                 try {
-                    issueByIdWithDescription = mgr.getIssueManager().getIssueById(issueId, Include.journals);
-                    String BufText="Описание:"+((issueByIdWithDescription.getDescription()!=null)?issueByIdWithDescription.getDescription():"");
+                    
+                  
+                    String BufText="Описание:"+descriptionIssue;
                     String BufComment="Комментарии:\n";
                     StringBuilder msg = new StringBuilder();
                     String buf;
                     try{
-                        Collection<Journal> collectionJournals=issueByIdWithDescription.getJournals();
-                        List<Journal> listJournals = new ArrayList(collectionJournals);
-                        Comparator<Journal> comparatorJournals = 
-                            (Journal left, Journal right) -> left.getCreatedOn().compareTo(right.getCreatedOn());
-                        Collections.sort(listJournals, comparatorJournals);
+                       
                         
                         int countjrnl=1;
-                        for (Journal journal : listJournals) {
+                        for (JournalRM journal : journalsList) {
                             try{
                             if((journal.getNotes()!=null)&&(!journal.getNotes().trim().isEmpty()))
                             {
@@ -709,7 +1092,7 @@ public class RM_1 extends Application {
                     descriptionComments.setText(msg.toString());
                     tfNewComment.setText("");
                     urlIssue=uri+"/issues/"+table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
-                } catch (RedmineException ex) {
+                } catch (Exception ex) {
                     LOG.addHandler(handler);
                     LOG.log(Level.SEVERE, null, ex);
                 }
@@ -739,7 +1122,9 @@ public class RM_1 extends Application {
                 if(selectedIssue==0||timeStartInWork==0)
                 {
                     selectedIssue=Integer.parseInt(table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString());
+                    selectedIssueName=table.getColumns().get(3).getCellObservableValue(indexRow).getValue().toString();
                     markedIssue=table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
+                    markedIssueName=selectedIssueName;
                 }
                 urlIssue=uri+"/issues/"+table.getColumns().get(0).getCellObservableValue(indexRow).getValue().toString();
                 //if control button was pressed open url of issue
@@ -767,26 +1152,12 @@ public class RM_1 extends Application {
                           if(!name.trim().isEmpty())
                           {
                               int idOfIssueWhereChangeSpentHours=Integer.valueOf(table.getSelectionModel().getSelectedItem().getIdCol());
-                                TimeEntry TE=new TimeEntry();                                
-                                TE.setHours(Float.parseFloat(convertMinutesToSpentHours(name)));
-                                TE.setIssueId(idOfIssueWhereChangeSpentHours);
-                                TE.setActivityId(ID_ACTIVITY_ENGINEERING); 
-                                try {
-                                     mgr.getTimeEntryManager().createTimeEntry(TE);
-                                     changeIssueStatusFromNew(idOfIssueWhereChangeSpentHours,ID_STATUS_VALUATION_SPENT_TIME, false);
-                     
-                                     String spentHoursStringBuf=mgr.getIssueManager().getIssueById(idOfIssueWhereChangeSpentHours).getSpentHours().toString();
-                                    spentHoursMap.replace(idOfIssueWhereChangeSpentHours,convertSpentHours(spentHoursStringBuf));
-                                    setTableIssues();
-                                    updateTableIssues();
-                                    } catch (RedmineException ex) {
-                                        alert.setTitle("Внимание");
-                                        alert.setHeaderText(null);
-                                        alert.setContentText("Трудозатраты не удалось сохранить! Задача: "+idOfIssueWhereChangeSpentHours+" Трудозатраты:"+TE.getHours());
-                                        alert.showAndWait();
-                                        LOG.addHandler(handler);
-                                        LOG.log(Level.SEVERE, null, ex);
-                                    }
+                              issueIdSpentHours=idOfIssueWhereChangeSpentHours;
+                              addExtraSpentHours(name);
+                              changeIssueStatusFromNew(idOfIssueWhereChangeSpentHours,ID_STATUS_IN_WORK, false);
+                                setTableIssues();
+                                updateTableIssues();
+
                           }
                     });
                     tiDialog = new TextInputDialog();
@@ -804,6 +1175,12 @@ public class RM_1 extends Application {
     //change color oin cell with selected item
     private void updateTableIssues()
     {
+        
+                                            
+        priorityIdCol.setSortType(TableColumn.SortType.DESCENDING);                                   
+        table.setItems(rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()));
+        table.getSortOrder().add(priorityIdCol);
+        
         idCol.setCellFactory(column -> {
             return new TableCell<RowIssue, String>() {
                 @Override
@@ -854,22 +1231,40 @@ public class RM_1 extends Application {
         if(!bufStatusIdString.isEmpty()&&!bufTrackerIdString.isEmpty()){
         priorityIdCol.setSortType(TableColumn.SortType.DESCENDING);
 
-             Params params2 = new Params()
-                                .add("set_filter", "1")
-                                .add("assigned_to_id", String.valueOf(idCurrentUser))
-                                .add("tracker_id", bufTrackerIdString)
-                                .add("status_id", bufStatusIdString);
-
             try {
-
-                issues = mgr.getIssueManager().getIssues(params2).getResults();
-            } catch (RedmineException ex) {
+                   synchronized (issues) {
+                            issues.clear();
+                            if( clientEndPoint.userSession.isOpen()){
+                                System.out.println( String.valueOf(bufTrackerIdString));
+                                 clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"get_issues\",\"user_id\":"+String.valueOf(idCurrentUser)+",\"tracker_id\":\""+String.valueOf(bufTrackerIdString)+"\",\"status_id\":\""+String.valueOf(bufStatusIdString)+"\"}]]");  
+                              
+                                while (issues.isEmpty()) {
+                                    System.out.println("issues is empty...");
+                                     try {
+                                         issues.wait(5000);
+                                         if(issues.isEmpty()){
+                                            System.out.println("Задачи не получили");
+                                            bufRowList.add(new RowIssue("","","","","","",""));
+                                            break;
+                                        }
+                                     } catch (InterruptedException ex) {
+                                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                                     }                            
+                                }  
+                              //  System.out.println("Забыли все и вышли из цикла");
+                               
+                            }
+                   }      
+                    System.out.println("GET ISSUES");
+              //  issues = mgr.getIssueManager().getIssues(params2).getResults();
+            } catch (Exception ex) {
                 LOG.addHandler(handler);
                 LOG.log(Level.SEVERE, null, ex);
             }
 
                                 String bufTheme;
-                                for (Issue issue : issues) {
+                                for (IssueRM issue : issues) {
+                                     System.out.println(issue.getSubject());
                                     if(issue.getAssigneeId()!=null) {
                                         if (issue.getAssigneeId()==idCurrentUser) {                                           
                                             Text text = new Text(issue.getSubject());                                          
@@ -880,26 +1275,20 @@ public class RM_1 extends Application {
                             
                                          bufTheme=issue.getSubject();
                                          
-                                   
+                                        
                                             try {
-                                                String spentHoursStringBuf=spentHoursMap.get(issue.getId());
-                                                if(spentHoursStringBuf==null)
-                                                {
+                                                String spentHoursStringBuf=String.valueOf(issue.getEstimatedHours());
+                                               
 
-                                                        if(issue.getStatusId()!=ID_STATUS_NEW)
-                                                        {
-                                                            Float bufSpentTimeIfEnable=mgr.getIssueManager().getIssueById(issue.getId()).getSpentHours();
-                                                            spentHoursStringBuf=(bufSpentTimeIfEnable!=null)?bufSpentTimeIfEnable.toString():"НД";
-                                                        }
-                                                        else
-                                                        {
+                                                        if(issue.getStatusId()==ID_STATUS_NEW)
+                                                       
                                                             spentHoursStringBuf="Новая";
-                                                        }
+                                                        
                                                         spentHoursStringBuf=convertSpentHours(spentHoursStringBuf);
-                                                    spentHoursMap.put(issue.getId(), spentHoursStringBuf);
-                                                }
-                                                bufRowList.add(new RowIssue(issue.getId().toString(),issue.getStatusName(),issue.getPriorityText(),bufTheme,spentHoursStringBuf,issue.getPriorityId().toString(),issue.getAuthorName()));
-                                            } catch (RedmineException ex) {
+                                                        spentHoursMap.put(issue.getId(), spentHoursStringBuf);
+                                                
+                                                bufRowList.add(new RowIssue(issue.getId().toString(),issue.getStatusId().toString(),issue.getPriorityId().toString(),bufTheme,spentHoursStringBuf,issue.getPriorityId().toString(),issue.getAuthorId().toString()));
+                                            } catch (Exception ex) {
                                                 LOG.addHandler(handler);
                                                 LOG.log(Level.SEVERE, null, ex);
                                             }
@@ -921,110 +1310,64 @@ public class RM_1 extends Application {
         table.getSortOrder().add(priorityIdCol);
         if(selectedRowIndex!=-1)
             table.getSelectionModel().select(selectedRowIndex);   
-        issues=null;
+        issues.clear();
         
     }
     private void changeIssueStatusFromNew(int idOfUpdatedIssue, int newIdStatus, boolean flag)
     {
-        try {
-            Issue updatedIssue = mgr.getIssueManager().getIssueById(idOfUpdatedIssue);
-            if(updatedIssue.getStatusId()==ID_STATUS_NEW)
-            {
-            updatedIssue.setStatusId(newIdStatus);
-                           
-            mgr.getIssueManager().update(updatedIssue);
-            String spentHoursStringBuf=convertSpentHours(updatedIssue.getSpentHours().toString());
-            
-            spentHoursMap.replace(idOfUpdatedIssue, spentHoursStringBuf);
-
-            for (int i = 0; i < table.getItems().size(); i++) {
-                if (Integer.valueOf(table.getItems().get(i).getIdCol()) == idOfUpdatedIssue) {
-                
-                rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).setSpentHoursCol(spentHoursStringBuf);
-                priorityIdCol.setSortType(TableColumn.SortType.DESCENDING);
-                table.setItems(rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()));
-                table.getSortOrder().add(priorityIdCol);
-                break;
-                }
-            }
-            }
-            else if((flag)&&(updatedIssue.getStatusId()!=newIdStatus))
-            {
-                updatedIssue.setStatusId(newIdStatus);
-                mgr.getIssueManager().update(updatedIssue);                        
-            }
-        } catch (RedmineException ex) {
-            LOG.addHandler(handler);
-            LOG.log(Level.SEVERE, null, ex);
-        }
-    }
-    private void pauseTimer()
-    {
-        notificationTimer.cancel();
-    }
-    private void resumeTimer()
-    {
-        notificationTimer = new Timer();
-        notificationTimer.schedule(
-                    new TimerTask() {
-                        @Override
-                        public void run() {
-                            Platform.runLater(() -> {
-                                if((idCurrentUser!=0)&&(issuesAll!=null))
-                                {
-                                Params params2;
-                            
-                                    params2 = new Params()
-                                            .add("set_filter", "1")
-                                            .add("assigned_to_id", String.valueOf(idCurrentUser));
-                                List<Issue> issues2=null;
-                                try {
-                                    issues2 = mgr.getIssueManager().getIssues(params2).getResults();
+                          synchronized (changeStatus) {
+                            changeStatus.lock();
                                  
-                                } catch (RedmineException ex) {
-                                    LOG.addHandler(handler);
-                                    LOG.log(Level.SEVERE, null, ex);
-                                }
-                             
-                                if(issues2!=null)
-                                {                                   
-                              //compare received issues with initial issues
-                                if(!issuesAll.toString().equals(issues2.toString()))
-                                {
-                                 issues2.removeAll(issuesAll);                                 
-                                 setTableIssues();
-                             issuesAll.addAll(issues2);
-                            if(selectedIssue!=0&&timeStartInWork!=0)
-                                updateTableIssues();
-                            if(issues2.size()>0)
-                            {
-                                String messageShow="У вас "+String.valueOf(issues2.size())+" "+getNumEnding(issues2.size());
-                                javax.swing.SwingUtilities.invokeLater(() ->
-                                    trayIcon.displayMessage(
-                                        "Внимание",
-                                        messageShow, 
-                                        java.awt.TrayIcon.MessageType.INFO
-                                    )
-                                );
+                            if( clientEndPoint.userSession.isOpen()){
+                                clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"change_status_issue\",\"user_id\":"+String.valueOf(idCurrentUser)+",\"issue_id\":"+String.valueOf(idOfUpdatedIssue)+" ,\"status_id\":"+String.valueOf(newIdStatus)+" }]]"); 
+                                while (changeStatus.isLocked()) {
+                                    System.out.println("changeStatus is locked...");
+                                     try {
+                                         changeStatus.wait(5000);
+                                         
+                                         if(changeStatus.isLocked()){
+                                            alert.setTitle("Внимание");
+                                           alert.setHeaderText(null);
+                                           alert.setContentText("Статус задачи не удалось изменить! Задача: " +idOfUpdatedIssue);
+                                           alert.showAndWait();
+                                           LOG.addHandler(handler);
+                                            break;
+                                         }
+                                     } catch (InterruptedException ex) {
+                                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                                     }                            
+                                }                                
+                               
                             }
-                                }
-                                }
-                        
-                                }
-                        });  
-                        }
-                    },
-                    60_000,
-                    60_000
-            );
+                        }  
 
+                            for (int i = 0; i < table.getItems().size(); i++) {
+                                if (Integer.valueOf(table.getItems().get(i).getIdCol()) == idOfUpdatedIssue) {
+
+                                   
+                                   if( rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).getStatusCol().equals(String.valueOf(ID_STATUS_NEW)))
+                                   {
+                                      
+                                       String spentHoursStringBuf="0:00";
+                                        spentHoursMap.replace(idOfUpdatedIssue, spentHoursStringBuf);
+                                        rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).setSpentHoursCol("0:00");
+                                   }
+                                   
+                                  rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).setStatusCol(String.valueOf(newIdStatus));
+                                    priorityIdCol.setSortType(TableColumn.SortType.DESCENDING);
+                                    table.setItems(rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()));
+                                    table.getSortOrder().add(priorityIdCol);
+                                    break;
+                                }                            
+                            }
+                            
+                            
     }
+
     private void disableButtons(boolean dis)
     {
         try{
-//            if(dis)
-//             stage.getScene().setCursor(Cursor.WAIT);
-//            else
+
              stage.getScene().setCursor(Cursor.DEFAULT);
         }
         catch(Exception ex){          
@@ -1039,14 +1382,7 @@ public class RM_1 extends Application {
         trackerButton.setDisable(dis);
         browserButton.setDisable(dis);
         projectsButton.setDisable(dis);
-        if(dis)
-        {
-            pauseTimer();
-        }
-        else
-        {
-            resumeTimer();
-        }
+
     }
     private boolean setConfigParams()
     {
@@ -1236,27 +1572,38 @@ public class RM_1 extends Application {
 }
     private void showProjectStage()
     {
-            if(mgr!=null)
-            {
+           
                 projectsVbox.getChildren().clear();
                 projectsToggleGroupVbox.getChildren().clear();
                 try {
                     
-                    projectsList=mgr.getProjectManager().getProjects();
-                    projectsList.stream().map((project) -> {
-                        RadioButton rb = new RadioButton(project.getName());
+                 synchronized (projectsList) {
+                     projectsList.clear();
+                    clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"get_projects\",\"user_id\":"+String.valueOf(idCurrentUser)+" }]]"); 
+       
+                // while the list is empty, wait
+                while (projectsList.isEmpty()) {
+                   System.out.println("projectsList is empty...");
+                        try {
+
+                            projectsList.wait();
+
+                        } catch (InterruptedException ex) {
+                            Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                        }                            
+                   }        
+                }
+                    
+
+                    for (ProjectRM project : projectsList) { 
+                       RadioButton rb = new RadioButton(project.getName());
                         rb.setId(String.valueOf(project.getId()));
-                        return rb;
-                    }).map((rb) -> {
                         rb.setToggleGroup(projectsToggleGroup);
-                        return rb;
-                    }).map((rb) -> {
                         if(rb.getId().equals(idProject))
                             rb.setSelected(true);
-                        return rb;
-                    }).forEachOrdered((rb) -> {
                         projectsToggleGroupVbox.getChildren().add(rb);
-                    });
+//                        return rb;
+                    }
                     
                     tfSubproject.setMaxWidth(140);
                     tfSubproject.setText(idSubproject);
@@ -1296,11 +1643,11 @@ public class RM_1 extends Application {
                     projectsList.clear();
                     projectStage.setTitle("Проект, в который будут добавляться задачи");
                     projectStage.show();
-                } catch (RedmineException ex) {
+                } catch (Exception ex) {
                     LOG.addHandler(handler);
                     LOG.log(Level.SEVERE, null, ex);
                 }
-            }
+            
             
     }
 private void writeToTrackersOut()
@@ -1391,175 +1738,95 @@ private static String readFile(String path, Charset encoding)
          try{
                 if(table.getSelectionModel().getSelectedItem()!=null){
                     int idDeferIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+                    String nameDeferIssue=table.getSelectionModel().getSelectedItem().getThemeCol();
+                    String idStatusBefore=table.getSelectionModel().getSelectedItem().getStatusCol();
                    
                               
-                    String url = connDefer.getHostDefer()+"/create?host="+cc.getHost()+"&api_key="+cc.getKey()+"&id_issue="+idDeferIssue+"&date_return="+dateReturn+"&status_before="+mgr.getIssueManager().getIssueById(idDeferIssue).getStatusId()+"&status_defer="+custClass.getID_STATUS_DEFER();
-                                       
+                 //   String url = connDefer.getHostDefer()+"/create?host="+cc.getHost()+"&api_key="+cc.getKey()+"&id_issue="+idDeferIssue+"&date_return="+dateReturn+"&status_before="+mgr.getIssueManager().getIssueById(idDeferIssue).getStatusId()+"&status_defer="+custClass.getID_STATUS_DEFER();
+                    
+                     synchronized (deferIssue) {
+                            deferIssue.lock();
+                                 
+                            if( clientEndPoint.userSession.isOpen()){                                
+                                clientEndPoint.sendMessage("[7,\"defer_issue\",[{\"command\":\"defer_issue\", \"api_key\":\""+cc.getKey()+"\", \"priority_id\":"+String.valueOf(connDefer.getPriorityDefer())+",\"host\":\""+cc.getHost()+"\", \"date_return\":\""+dateReturn+"\", \"status_before\":\""+idStatusBefore+"\", \"status_defer\":\""+custClass.getID_STATUS_DEFER()+"\", \"id_issue\":"+String.valueOf(idDeferIssue)+", \"user_id\": \""+String.valueOf(idCurrentUser)+"\"}]]");                
+                             
+                                while (deferIssue.isLocked()) {
+                                    System.out.println("deferIssue is locked...");
+                                     try {
+                                         deferIssue.wait(5000);
+                                         
+                                         if(deferIssue.isLocked()){
+                                           
+                                            alert.setTitle("Внимание");
+                                            alert.setHeaderText(null);
+                                            alert.setContentText("Не удалось отложить задачу!");
+                                            alert.showAndWait();
+                                           LOG.addHandler(handler);
+                                            break;
+                                         }
+                                     } catch (InterruptedException ex) {
+                                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                                     }                            
+                                }            
+                            }
+                            
+                   }  
+                    
+                     
                     changeIssueStatusFromNew(idDeferIssue,ID_STATUS_DEFER,true);                  
                     setTableIssues();
                     if(!markedIssue.trim().isEmpty()&&timeStartInWork!=0)
-                    updateTableIssues(); 
+                        updateTableIssues(); 
                     multilineRowTheme();              
-                    URL obj;
-                    if(useDeferHost)
-                    sendAction(String.valueOf(idDeferIssue),"Отложил");
-                    try {
-                        obj = new URL(url);
-                        HttpURLConnection connection = (HttpURLConnection) obj.openConnection();
-                        connection.setRequestMethod("GET");
-                        BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-                        String inputLine;
-                        StringBuffer response = new StringBuffer();
-                        while ((inputLine = in.readLine()) != null) {
-                            response.append(inputLine);
-                         }
-                        in.close();
-                        System.out.println(response.toString());
-                        if(!response.toString().equals("true")){
-                            alert.setTitle("Внимание");
-                            alert.setHeaderText(null);
-                            alert.setContentText("Возникли проблемы. Автоматический возврат произведен не будет.");
-                            alert.showAndWait();
-                        
-                        }
-                        
-                        } catch (MalformedURLException ex) {
-                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-                             alert.setTitle("Внимание");
-                            alert.setHeaderText(null);
-                            alert.setContentText("Неправильно задано имя хоста для отложенных задач. Автоматический возврат произведен не будет!");
-                            alert.showAndWait();
-                              LOG.addHandler(handler);
-                              LOG.log(Level.SEVERE, null, ex);
-                         } catch (ProtocolException ex) {
-                            Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-                              LOG.addHandler(handler);
-                              LOG.log(Level.SEVERE, null, ex);
-                         } catch (IOException ex) {
-                               alert.setTitle("Внимание");
-                               alert.setHeaderText(null);
-                            alert.setContentText("Неправильно задано имя хоста для отложенных задач. Автоматический возврат произведен не будет!");
-                            alert.showAndWait();
-                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-                               LOG.addHandler(handler);
-                              LOG.log(Level.SEVERE, null, ex);
-                        }
+//                    URL obj;
+//                    if(useDeferHost)
+                    sendAction(String.valueOf(idDeferIssue),nameDeferIssue,"Отложил");
                        
                 }
             }catch(NumberFormatException ex){
                 LOG.addHandler(handler);
                 LOG.log(Level.SEVERE, null, ex);
-            } catch (RedmineException ex) {  
+            } catch (Exception ex) {  
                 Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
             }
             progressBarDefer.setVisible(false);
             disableButtons(false);
     }
     //send to server dashboard info about action user
-    private void sendAction(String issue, String action){
-       
-                   
-                    int idActionIssue =Integer.parseInt(issue);                  
-                   try {
-                            issue=mgr.getIssueManager().getIssueById(idActionIssue).getSubject();
-                            issue=URLEncoder.encode(issue, "UTF-8");
-                            action=URLEncoder.encode(action, "UTF-8");
-                    } catch (UnsupportedEncodingException ex) {
-                            LOG.addHandler(handler);
-                            LOG.log(Level.SEVERE, null, ex);
-                    } catch (RedmineException ex) {
-                            LOG.addHandler(handler);
-                            LOG.log(Level.SEVERE, null, ex);
-                    }
-                   
+    private void sendAction( String idActionIssue,String issue, String action){
+
+//                   
                     long unixTime = System.currentTimeMillis() / 1000L;
-                 //   System.out.println(String.valueOf(idCurrentUser));
-                    String url = connDefer.getHostDefer()+"/actions/create?user="+userName+"&action="+action+"&issue="+issue+"&time="+String.valueOf(unixTime)+"&id_issue="+idActionIssue+"&id_user="+idCurrentUser+"&id_parent="+((!idSubproject.trim().isEmpty())?idSubproject:"")+"&id_project="+idProject;
-                                                         
-                    URL obj;
-                    try {
-                        obj = new URL(url);
-                        HttpURLConnection connection = (HttpURLConnection) obj.openConnection();
-                        connection.setRequestMethod("GET");
-                        BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-                        String inputLine;
-                        StringBuffer response = new StringBuffer();
-                        while ((inputLine = in.readLine()) != null) {
-                            response.append(inputLine);
-                         }
-                        in.close();
-                        System.out.println(response.toString());
-                        if(!response.toString().equals("true")){
-//                            alert.setTitle("Внимание");
-//                            alert.setHeaderText(null);
-//                            alert.setContentText("Возникли проблемы.");
-//                            alert.showAndWait();
-                            LOG.addHandler(handler);
-                            LOG.log(Level.SEVERE, null, "statistic not send");
-                        
-                        }
-                        
-                        } catch (MalformedURLException ex) {
-                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-//                             alert.setTitle("Внимание");
-//                            alert.setHeaderText(null);
-//                            alert.setContentText("Статистика не отправлена");
-//                            alert.showAndWait();
-                              LOG.addHandler(handler);
-                              LOG.log(Level.SEVERE, null, ex);
-                         } catch (ProtocolException ex) {
-                            Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-                              LOG.addHandler(handler);
-                              LOG.log(Level.SEVERE, null, ex);
-                         } catch (IOException ex) {
-//                               alert.setTitle("Внимание");
-//                               alert.setHeaderText(null);
-//                            alert.setContentText("Статистика не отправлена");
-//                            alert.showAndWait();
-                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-                               LOG.addHandler(handler);
-                              LOG.log(Level.SEVERE, null, ex);
-                        }
-                       
+                    synchronized (sendAction) {
+                            sendAction.lock();
+                                 
+                            if( clientEndPoint.userSession.isOpen()){     
+                             
+                                clientEndPoint.sendMessage("[7,\"send_action\",[{\"command\":\"send_action\", \"user\":\""+userName+"\",\"host\":\""+connDefer.getHostDefer()+"\", \"time\":\""+String.valueOf(unixTime)+"\", \"action\":\""+action+"\", \"id_project\":\""+idProject+"\",\"id_parent\":\""+((!idSubproject.trim().isEmpty())?idSubproject:"")+"\", \"id_issue\":\""+String.valueOf(idActionIssue)+"\", \"issue\":\""+String.valueOf(issue).replaceAll("\"","\\\\\"")+"\", \"user_id\": \""+String.valueOf(idCurrentUser)+"\"}]]");                
+                            
+                                while (sendAction.isLocked()) {
+                                    System.out.println("sendAction is locked...");
+                                     try {
+                                         sendAction.wait(5000);
+                                         
+                                         if(sendAction.isLocked()){
+                                           
+                                            alert.setTitle("Внимание");
+                                            alert.setHeaderText(null);
+                                            alert.setContentText("Не удалось отправить статистику!");
+                                            alert.showAndWait();
+                                            LOG.addHandler(handler);
+                                            break;
+                                         }
+                                     } catch (InterruptedException ex) {
+                                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                                     }                            
+                                }            
+                            }
+                   }                                 
              
     }
-//    //send to server dashboard info about status online
-//    private void sendOnline(){
-//      
-//                    String url = connDefer.getHostDefer()+"/actions/online?id_user="+idCurrentUser;                                                      
-//                    URL obj;
-//                    try {
-//                        obj = new URL(url);
-//                        HttpURLConnection connection = (HttpURLConnection) obj.openConnection();
-//                        connection.setRequestMethod("GET");
-//                        BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-//                        String inputLine;
-//                        StringBuffer response = new StringBuffer();
-//                        while ((inputLine = in.readLine()) != null) {
-//                            response.append(inputLine);
-//                         }
-//                        in.close();                     
-//                        if(!response.toString().equals("true")){//                      
-//                            LOG.addHandler(handler);
-//                            LOG.log(Level.SEVERE, null, "status not send");                        
-//                        }
-//                        
-//                        } catch (MalformedURLException ex) {
-//                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-//                              LOG.addHandler(handler);
-//                              LOG.log(Level.SEVERE, null, ex);
-//                         } catch (ProtocolException ex) {
-//                            Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-//                              LOG.addHandler(handler);
-//                              LOG.log(Level.SEVERE, null, ex);
-//                         } catch (IOException ex) {
-//                             Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-//                               LOG.addHandler(handler);
-//                              LOG.log(Level.SEVERE, null, ex);
-//                        }
-//                       
-//             
-//    }
+
 @Override
     public void start(Stage primaryStage) throws FileNotFoundException, KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, KeyManagementException, UnrecoverableKeyException, RedmineException {
      
@@ -1583,7 +1850,7 @@ private static String readFile(String path, Charset encoding)
                         + " уже существует.");
             dirHome +="/";
         }
-        
+
         
         handler = new FileHandler(dirHome+"logger.log", 1000000, 7);
         handler.setFormatter(new SimpleFormatter());
@@ -2105,15 +2372,40 @@ private static String readFile(String path, Charset encoding)
         if(!tfNewComment.getText().trim().isEmpty())
         {
             try {
-                 issueByIdWithDescription.setNotes(tfNewComment.getText().trim().replaceAll("\n","<br>"));
-                 mgr.getIssueManager().update(issueByIdWithDescription);
-                 if(issueByIdWithDescription.getStatusId()==ID_STATUS_NEW)
-                 {
-                     changeIssueStatusFromNew(issueByIdWithDescription.getId(),ID_STATUS_VALUATION_SPENT_TIME, false);
-                     setTableIssues();
-                     updateTableIssues();
-                 }
-            } catch (RedmineException ex) {
+               synchronized (newComment) {
+                            newComment.lock();
+                                 
+                            if( clientEndPoint.userSession.isOpen()){                                
+                                clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"new_journal\", \"notes\":\""+tfNewComment.getText().trim().replaceAll("\n","<br>").replaceAll("\"","\\\\\"")+"\", \"issue_id\":"+String.valueOf(issueByIdWithDescription)+", \"user_id\": "+String.valueOf(idCurrentUser)+"}]]");                
+                            
+                                while (newComment.isLocked()) {
+                                    System.out.println("newComment is locked...");
+                                     try {
+                                         newComment.wait(5000);
+                                         
+                                         if(newComment.isLocked()){
+                                           
+                                            alert.setTitle("Внимание");
+                                            alert.setHeaderText(null);
+                                            alert.setContentText("Не удалось Добавить комментарий!");
+                                            alert.showAndWait();
+                                           LOG.addHandler(handler);
+                                            break;
+                                         }
+                                     } catch (InterruptedException ex) {
+                                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                                     }                            
+                                }            
+                            }
+                   }  
+               
+//                 if(issueByIdWithDescription.getStatusId()==ID_STATUS_NEW)
+//                 {
+//                     changeIssueStatusFromNew(issueByIdWithDescription.getId(),ID_STATUS_VALUATION_SPENT_TIME, false);
+//                     setTableIssues();
+//                     updateTableIssues();
+//                 }
+            } catch (Exception ex) {
                 LOG.addHandler(handler);
                 LOG.log(Level.SEVERE, null, ex);
             }
@@ -2149,11 +2441,12 @@ private static String readFile(String path, Charset encoding)
                trayIcon.setImage(trayImage);
                 
                //if connection established and issue selected
-               if((mgr!=null)&&(table.getSelectionModel().getSelectedItem()!=null))
+               if((table.getSelectionModel().getSelectedItem()!=null))
                {
                    int idFinishedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
-                   if(useDeferHost)
-                   sendAction(String.valueOf(idFinishedIssue),"Завершил");
+                   String nameFinishedIssue=table.getSelectionModel().getSelectedItem().getThemeCol();
+//                   if(useDeferHost)
+                   sendAction(String.valueOf(idFinishedIssue),nameFinishedIssue,"Завершил");
                    //if issue is in work now
                    if((selectedIssue!=0)&&(timeStartInWork!=0)&&(selectedIssue==idFinishedIssue)){
                        //save time which spent on this issue
@@ -2166,12 +2459,14 @@ private static String readFile(String path, Charset encoding)
                        Issue updateIssue;
                        //set issue status finished
                        try {
-                           updateIssue = mgr.getIssueManager().getIssueById(selectedIssue);
-                           updateIssue.setStatusId(ID_STATUS_FINISHED);
+                         //  updateIssue = mgr.getIssueManager().getIssueById(selectedIssue);
+                           
+                           changeIssueStatusFromNew(selectedIssue, ID_STATUS_FINISHED,true);
+//                           updateIssue.setStatusId(ID_STATUS_FINISHED);
                           
-                           mgr.getIssueManager().update(updateIssue);
+//                           mgr.getIssueManager().update(updateIssue);
                            spentHoursMap.remove(selectedIssue);
-                       } catch (RedmineException ex) {
+                       } catch (Exception ex) {
                            LOG.addHandler(handler);
                            LOG.log(Level.SEVERE, null, ex);
                        }
@@ -2208,12 +2503,9 @@ private static String readFile(String path, Charset encoding)
                        Issue updateIssue;
                        //set issue status finished
                        try {
-                           updateIssue = mgr.getIssueManager().getIssueById(idFinishedIssue);
-                           updateIssue.setStatusId(ID_STATUS_FINISHED);
-                           
-                           mgr.getIssueManager().update(updateIssue);
+                           changeIssueStatusFromNew(selectedIssue, ID_STATUS_FINISHED,true);
                            spentHoursMap.remove(idFinishedIssue);
-                       } catch (RedmineException ex) {
+                       } catch (Exception ex) {
                            LOG.addHandler(handler);
                            LOG.log(Level.SEVERE, null, ex);
                        }
@@ -2240,13 +2532,10 @@ private static String readFile(String path, Charset encoding)
                    else if((selectedIssue!=0)&&(timeStartInWork==0))
                    {
                        try {
-                           //change status to finished
-                           Issue updateIssue=mgr.getIssueManager().getIssueById(selectedIssue);
-                           updateIssue.setStatusId(ID_STATUS_FINISHED);
-                           
-                           mgr.getIssueManager().update(updateIssue);
+                           changeIssueStatusFromNew(selectedIssue, ID_STATUS_FINISHED,true);
+//                           mgr.getIssueManager().update(updateIssue);
                            spentHoursMap.remove(selectedIssue);
-                       } catch (RedmineException ex) {
+                       } catch (Exception ex) {
                            LOG.addHandler(handler);
                            LOG.log(Level.SEVERE, null, ex);
                        }
@@ -2271,16 +2560,7 @@ private static String readFile(String path, Charset encoding)
                        setTableIssues();
                        multilineRowTheme();
                    }  
-                   try {
-               Params params2 = new Params()
-                            .add("set_filter", "1")
-                            .add("assigned_to_id", String.valueOf(idCurrentUser));
-              
-                        issuesAll = mgr.getIssueManager().getIssues(params2).getResults();
-                    } catch (RedmineException ex) {
-                        LOG.addHandler(handler);
-                        LOG.log(Level.SEVERE, null, ex);
-                    }    
+
                }
                lbTime.setText("");
                //enable buttons      
@@ -2294,8 +2574,8 @@ private static String readFile(String path, Charset encoding)
                    startButton.setGraphic(new ImageView(startImage));
                    startButton.setTooltip(new Tooltip("Запусить задачу"));
                    
-                   if(selectedIssue!=0&&timeStartInWork!=0&& useDeferHost)
-                       sendAction(String.valueOf(selectedIssue),"Пауза");
+                   if(selectedIssue!=0&&timeStartInWork!=0)
+                       sendAction(String.valueOf(selectedIssue),selectedIssueName,"Пауза");
                   saveSpentHours();
                   //stop timer
                   workTimer.cancel();
@@ -2327,46 +2607,18 @@ private static String readFile(String path, Charset encoding)
 	@Override
 	public void run()
 	{
-//            try {
-//                        System.out.println("Now");
-//                        if(mgr!=null){
-//                            CustomFieldManager customFieldManager =mgr.getCustomFieldManager();
-//                            List<CustomFieldDefinition> customFieldDefinitions = customFieldManager.getCustomFieldDefinitions();
-//
-//                            for (CustomFieldDefinition customFieldDefinition : customFieldDefinitions) {                        
-//                             System.out.println( customFieldDefinition.getName());
-//                            }
-//                        }
-//                     } catch (RedmineException ex) {
-//                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-//                     }
-              try{
-                   changeIssueStatusFromNew(selectedIssue, ID_STATUS_IN_WORK,true);                                      
-                      //send to rmdashboard action start
-                      if(useDeferHost)
-                      sendAction(String.valueOf(selectedIssue),"Запустил");
-              } catch(Exception ex){}
+
+   
             Platform.runLater(new Runnable() {
             @Override
             public void run() {
-           
                      timeStartInWork= System.currentTimeMillis();
                         //change image in tray
                       BufferedImage trayImage = SwingFXUtils.fromFXImage(startImage24,null);             
                       trayIcon.setImage(trayImage);
                       try{
-                      //save value of selectd issue so that change it color in the table
-                      if(table.getSelectionModel().getSelectedItem()!=null){
-                        markedIssue=table.getSelectionModel().getSelectedItem().getIdCol();
-                      }
-                      else
-                      {
-                          markedIssue=String.valueOf(selectedIssue);                          
-                      }
-                     
-                      setTableIssues();      
-                      updateTableIssues();
-                      //start timer
+                        setTableIssues();      
+                        updateTableIssues();
                       } catch(Exception ex){}
                          
             } 
@@ -2375,15 +2627,25 @@ private static String readFile(String path, Charset encoding)
     }
           startButton.setOnMousePressed((final MouseEvent e) -> {
                if (e.getButton().equals(MouseButton.PRIMARY)) {  
-                     stage.getScene().setCursor(Cursor.WAIT);                     
-               }
+                     stage.getScene().setCursor(Cursor.WAIT);    
+                      if(table.getSelectionModel().getSelectedItem()!=null){
+                        markedIssue=table.getSelectionModel().getSelectedItem().getIdCol();
+                        markedIssueName=table.getSelectionModel().getSelectedItem().getThemeCol();
+                      }
+                      else
+                      {
+                          markedIssue=String.valueOf(selectedIssue);                          
+                          markedIssueName=selectedIssueName;                          
+                      }
+                      updateTableIssues();
+               }                 
           });
           //add action to button which starts issues
           startButton.setOnAction((final ActionEvent e) -> { 
                //disable buttons              
              disableButtons(true);  
               //if connection established and issue selected
-              if ((mgr!=null)&&(selectedIssue!=0)) {
+              if ((selectedIssue!=0)) {
                   if ((selectedIssue!=0)&&(timeStartInWork==0)) {
                       //notice time
                       timeStartInWork= System.currentTimeMillis();
@@ -2414,15 +2676,42 @@ private static String readFile(String path, Charset encoding)
                         LOG.log(Level.SEVERE, null, ex);
                       }
                        startButton.setGraphic(new ImageView(pauseImage));
-                      startButton.setTooltip(new Tooltip("Остановить таймер")); 
-                       onStartButton sb = new onStartButton();	//Создание потока    
-                       sb.start(); 
+                      startButton.setTooltip(new Tooltip("Остановить таймер"));
+                      
+                      if(!rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(table.getSelectionModel().getSelectedIndex()).getStatusCol().toString().equals(String.valueOf(ID_STATUS_IN_WORK)))
+                      {
+                          
+                        
+                        changeIssueStatusFromNew(selectedIssue, ID_STATUS_IN_WORK,true); 
+                        
+                        String bufStatusIdString=statusIdStringList.get(tabs.getSelectionModel().getSelectedIndex());
+                        String currentIssueStatus=String.valueOf(ID_STATUS_IN_WORK);
+                            if(!( (bufStatusIdString.contains("|"+currentIssueStatus+"|"))
+                               ||(bufStatusIdString.equals(currentIssueStatus))
+                               ||(bufStatusIdString.indexOf(currentIssueStatus)==0)
+                               ||((bufStatusIdString.indexOf("|"+currentIssueStatus)==bufStatusIdString.length()-currentIssueStatus.length()-1)&&(bufStatusIdString.contains("|"+currentIssueStatus)))
+                                           ))
+                        rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).remove(table.getSelectionModel().getSelectedIndex());
+                        
+                      }
+//                       onStartButton sb = new onStartButton();	//Создание потока    
+//                       sb.start(); 
+
+                        timeStartInWork= System.currentTimeMillis();
+                        //change image in tray
+                      BufferedImage trayImage = SwingFXUtils.fromFXImage(startImage24,null);             
+                      trayIcon.setImage(trayImage);
+                     sendAction(String.valueOf(selectedIssue),selectedIssueName,"Запустил");
+                     
+                   //   setTableIssues();      
+                      updateTableIssues();
+                   
+                     
                   } else { //if issue already started in this program
                
                       //stop timer
                       workTimer.cancel();
                       
-                      //lbTime.setText("");
                       //save time spent on this issue
                       saveSpentHours();
                       timeStartInWork=0;
@@ -2430,8 +2719,8 @@ private static String readFile(String path, Charset encoding)
                       Button button = (Button) e.getSource();
                       button.setGraphic(new ImageView(startImage));
                       button.setTooltip(new Tooltip("Запусить задачу"));
-                      if(useDeferHost)
-                       sendAction(String.valueOf(markedIssue),"Пауза");
+//                      if(useDeferHost)
+                       sendAction(String.valueOf(markedIssue),markedIssueName,"Пауза");
 
                       //update timer
                       workTimer = new Timer();
@@ -2442,9 +2731,10 @@ private static String readFile(String path, Charset encoding)
                       updateTableIssues();
                       //select issue which selected now
                       try{
-                          if(table.getSelectionModel().getSelectedItem()!=null)
-                          selectedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
-                       
+                          if(table.getSelectionModel().getSelectedItem()!=null){
+                            selectedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+                            selectedIssueName=table.getSelectionModel().getSelectedItem().getThemeCol();
+                          }
                       }catch(NumberFormatException ex){
                           selectedIssue=0;
                       } 
@@ -2462,12 +2752,9 @@ private static String readFile(String path, Charset encoding)
           });
         deferButton.setOnAction((final ActionEvent e) -> {  
                  
-    
-            
-     // deferTimeFrame.setVisible(true);
         disableButtons(true);
         if(useDeferHost){
-        if((mgr!=null)&&(table.getSelectionModel().getSelectedItem()!=null)){
+        if((table.getSelectionModel().getSelectedItem()!=null)){
             SimpleDateFormat sdfDate = new SimpleDateFormat("dd.MM.yyyy");//dd/MM/yyyy
             Date now = new Date();
             String strDate = sdfDate.format(now);                   
@@ -2528,16 +2815,12 @@ private static String readFile(String path, Charset encoding)
                 deferStage.hide();
                
                 int idDeferIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
-                Issue updatedIssue = mgr.getIssueManager().getIssueById(idDeferIssue);               
-                updatedIssue.setPriorityId(connDefer.getPriorityDefer());
-              // mgr.getIssueManager().getIssuePriorities().get(0);
-                mgr.getIssueManager().update(updatedIssue);
                 setDeferTime(Long.toString(unixTime));       
                
          
             } catch (ParseException ex) {
                 Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
-            } catch (RedmineException ex) {
+            } catch (Exception ex) {
                 Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
             }
                     
@@ -2676,7 +2959,6 @@ private static String readFile(String path, Charset encoding)
                             LOG.addHandler(handler);
                             LOG.log(Level.SEVERE, null, ex);
                         }
-                        //System.out.println(selectedBrowser);
                     }
                     
                 });
@@ -2728,21 +3010,80 @@ private static String readFile(String path, Charset encoding)
             browserStage.setScene(browserScene);                    
             browserStage.show();
         });
-        trackerButton.setOnAction((final ActionEvent e) -> {
-            if(mgr!=null)
+        class onTrackerButton extends Thread
+        {   
+	@Override
+            public void run()
             {
+                System.out.println("synchronized (statusesList_)");
+               
+                synchronized (statusesList) {
+                    // while the list is empty, wait
+                    while (statusesList.isEmpty()) {
+                       System.out.println("statuses is empty...");
+                            try {
+                                
+                                statusesList.wait(5000);
+                                if (statusesList.isEmpty())
+                                {
+                                    System.out.println("st id empty");
+                                    break;
+                                }
+                            } catch (InterruptedException ex) {
+                                Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                            }                            
+                       }        
+                }
+                System.out.println("Продолжаем после статусов");
+                   synchronized (trackersList) {
+                    // while the list is empty, wait
+                    while (trackersList.isEmpty()) {
+                       System.out.println("trackers is empty...");
+                            try {
+                                trackersList.wait(5000);
+                                 if (trackersList.isEmpty())
+                                {
+                                    System.out.println("tr id empty");
+                                    break;
+                                }
+                            } catch (InterruptedException ex) {
+                                Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                            }                            
+                       }        
+                }
+                System.out.println("Продолжаем после трекеров");
+            };                
+        }
+    
+        trackerButton.setOnAction((final ActionEvent e) -> {
+
+            onTrackerButton tb = new onTrackerButton();	//Создание потока    
+            tb.start(); 
+            clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"get_statuses\",\"user_id\":"+String.valueOf(idCurrentUser)+"}]]");
+            clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"get_trackers\",\"user_id\":"+String.valueOf(idCurrentUser)+"}]]");
+            try {
+                tb.join();
+            } catch (InterruptedException ex) {
+                System.out.println(ex.getMessage());
+                Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            
+      
                
                 trackersStackPane = new StackPane();
+                trackersRootStackPane = new StackPane();
+                trackersScrollPane = new ScrollPane();
+                
                 try {
+
                     checkboxStatuses.clear();
-                    checkboxTrackers.clear();
-                    statusesList = mgr.getIssueManager().getStatuses();
-                    trackersList = mgr.getIssueManager().getTrackers();
+                    checkboxTrackers.clear();               
+ 
                     int marginSpace=20;
                     int marginCounter=1;
-                    trackersStackPane.getChildren().add(selectTrackersButton);
-                    StackPane.setAlignment(selectTrackersButton, Pos.BOTTOM_LEFT);
-                    StackPane.setMargin(selectTrackersButton, new Insets(5.0,5.0,5.0,175.0)); 
+//                    trackersStackPane.getChildren().add(selectTrackersButton);
+//                    StackPane.setAlignment(selectTrackersButton, Pos.BOTTOM_LEFT);
+//                    StackPane.setMargin(selectTrackersButton, new Insets(5.0,5.0,5.0,175.0)); 
                     String bufStatusIdString=statusIdStringList.get(tabs.getSelectionModel().getSelectedIndex());//statusIdString
                     String bufTrackerIdString=trackerIdStringList.get(tabs.getSelectionModel().getSelectedIndex());
         
@@ -2783,17 +3124,24 @@ private static String readFile(String path, Charset encoding)
                         marginCounter++;
                         checkboxTrackers.get(checkboxTrackers.size()-1).setId(String.valueOf(issueTracker.getId()));              
                     }            
-                } catch (RedmineException ex) {
+                } catch (Exception ex) {
                     LOG.addHandler(handler);
                     LOG.log(Level.SEVERE, null, ex);
                 }
                 statusesList.clear();
                 trackersList.clear();
+                    trackersScrollPane.setContent(trackersStackPane);
                     
-                Scene trackersScene = new Scene(trackersStackPane, 400, 600);
+                    trackersRootStackPane.getChildren().add(trackersScrollPane);                   
+                    trackersRootStackPane.getChildren().add(selectTrackersButton);
+                    trackersRootStackPane.setAlignment(selectTrackersButton, Pos.BOTTOM_LEFT);
+                    trackersRootStackPane.setMargin(trackersScrollPane, new Insets(0.0,0.0,40.0,0.0));
+                    trackersRootStackPane.setMargin(selectTrackersButton, new Insets(5.0,5.0,5.0,175.0)); 
+                Scene trackersScene = new Scene(trackersRootStackPane, 420, 620);
+                 
                 trackersStage.setScene(trackersScene);                    
                 trackersStage.show();
-            }
+            
         });
         selectTrackersButton.setOnAction((final ActionEvent e) -> {
             String bufTrackerIdString="";
@@ -2824,94 +3172,63 @@ private static String readFile(String path, Charset encoding)
                     checkboxTrackers.clear();
                     checkboxStatuses.clear();
             setTableIssues();
+            multilineRowTheme();
             if(!markedIssue.trim().isEmpty()&&timeStartInWork!=0)
                 updateTableIssues();
             trackersStage.hide();
         });
         createButton.setOnMousePressed((final MouseEvent e) -> {
-               if (e.getButton().equals(MouseButton.PRIMARY)) {  
-                     stage.getScene().setCursor(Cursor.WAIT);                     
-               }
+             
           });
         createButton.setOnAction((final ActionEvent e) -> {
-            if(mgr!=null&&cc!=null){
+            if(cc!=null){
              if(idProject.trim().isEmpty())
              {
                 showProjectStage(); 
              }
              else
              {
-            tiDialog.getEditor().setText("Задача");
-            tiDialog.getEditor().requestFocus();
-            tiDialog.setTitle("Новая задача");
-            tiDialog.setHeaderText(null);
-            tiDialog.setContentText("Введите название задачи:");
-            Optional<String> result = tiDialog.showAndWait();
-            result.ifPresent(name -> {
+                 
+                tiDialog.getEditor().setText("Задача");
+                tiDialog.getEditor().requestFocus();
+                tiDialog.setTitle("Новая задача");
+                tiDialog.setHeaderText(null);
+                tiDialog.setContentText("Введите название задачи:");
+                Optional<String> result = tiDialog.showAndWait();
+                result.ifPresent(name -> {
                 if(!name.trim().isEmpty())
                 {
-                  
-                 disableButtons(true);
-                 URIBuilder builder;
-                try {
-                    builder = new URIBuilder(cc.getHost()+"/issues.json");
-                    builder.addParameter("key", cc.getKey());
-
-                    URI uriNew = builder.build();
-            
-                    HttpPost request = new HttpPost(uriNew);
-                    
-                     name= name.replaceAll("\"","\\\\\"");
-//allow to use this certificate
-                        KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
-                        trustStore.load(null, null);                        
-                        MySSLSocketFactory sf = new MySSLSocketFactory(trustStore);
-                        sf.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);                       
-                        HttpParams params = new BasicHttpParams();
-                        HttpProtocolParams.setVersion(params, HttpVersion.HTTP_1_1);
-                        HttpProtocolParams.setContentCharset(params, HTTP.UTF_8);                       
-                        SchemeRegistry registry = new SchemeRegistry();
-                        registry.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80));
-                        registry.register(new Scheme("https", sf, 443));                        
-                        ClientConnectionManager ccm = new ThreadSafeClientConnManager(params, registry);                       
-                        HttpClient client = new DefaultHttpClient(ccm, params);
-//                        \"custom_fields\":[{ \"value\":[5,4,3], \"id\":168}  ] , 
-                        StringEntity paramsEntity =new StringEntity("{\"issue\": {    \"project_id\": "+idProject+",\"subject\": \""+name+"\", \"assigned_to_id\": "+String.valueOf(idCurrentUser)+((!idSubproject.trim().isEmpty())?", \"parent_issue_id\":"+idSubproject:"")+"}}","UTF-8");                    
-                        request.addHeader("Content-type", "application/json; charset=utf-8");
-                        request.setEntity(paramsEntity);
-             
-                        HttpResponse response = client.execute(request);
-                        
-                        if(response.getStatusLine().getStatusCode()!=201)
-                        {
-                            alert.setTitle("Внимание");
-                            alert.setHeaderText(null);
-                            alert.setContentText("Не удалось создать задачу!");
-                            alert.showAndWait();
-                        }
-                        else
-                        {
-                           
-                            setTableIssues();
-                                if(!markedIssue.trim().isEmpty()&&timeStartInWork!=0)
-                                    updateTableIssues();
-                                Params params2 = new Params()
-                                    .add("set_filter", "1")
-                                    .add("assigned_to_id", String.valueOf(idCurrentUser));
-
-                            try {
-                                issuesAll = mgr.getIssueManager().getIssues(params2).getResults();
-
-                            } catch (RedmineException ex) {
-                                LOG.addHandler(handler);
-                                LOG.log(Level.SEVERE, null, ex);
+                      synchronized (newIssue) {
+                            newIssue.lock();
+                                 
+                            if( clientEndPoint.userSession.isOpen()){
+                                String tracker_id="1";
+                                String status_id=String.valueOf(ID_STATUS_NEW);
+                                clientEndPoint.sendMessage("[7,\"redmine\",[{\"command\":\"new_issue\",\"issue\": {    \"project_id\": "+idProject+",\"subject\": \""+name+"\", \"tracker_id\": "+tracker_id+", \"status_id\": "+status_id+", \"subject\": \""+name+"\",  \"assigned_to_id\": "+String.valueOf(idCurrentUser)+((!idSubproject.trim().isEmpty())?", \"parent_issue_id\":"+idSubproject:"")+"}}]]");                
+                            
+                                while (newIssue.isLocked()) {
+                                    System.out.println("newIssue is locked...");
+                                     try {
+                                         newIssue.wait(5000);
+                                         
+                                         if(newIssue.isLocked()){
+                                           
+                                            alert.setTitle("Внимание");
+                                            alert.setHeaderText(null);
+                                            alert.setContentText("Не удалось создать задачу!");
+                                            alert.showAndWait();
+                                           LOG.addHandler(handler);
+                                            break;
+                                         }
+                                     } catch (InterruptedException ex) {
+                                         Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
+                                     }                            
+                                }            
                             }
-                        }
-                        
-                } catch (URISyntaxException | IOException | KeyStoreException | NoSuchAlgorithmException | CertificateException | KeyManagementException | UnrecoverableKeyException ex) {
-                    LOG.addHandler(handler);
-                    LOG.log(Level.SEVERE, null, ex);
-                } 
+                   }  
+                  
+                  
+      
                 disableButtons(false);
                 }
             });
@@ -2926,7 +3243,7 @@ private static String readFile(String path, Charset encoding)
           });
         stopButton.setOnAction((final ActionEvent e) -> {
             disableButtons(true);
-            if ((mgr!=null)&&(selectedIssue!=0)&&(timeStartInWork!=0)) {
+            if ((selectedIssue!=0)&&(timeStartInWork!=0)) {
                  
                 tiDialog.getEditor().setText("00:01");
                 tiDialog.getEditor().requestFocus();
@@ -2945,8 +3262,8 @@ private static String readFile(String path, Charset encoding)
                 tiDialog.setHeaderText(null);               
                 
                 try {
-                    tiDialog.setContentText("Введите действительные трудозатраты по задаче: \n"+mgr.getIssueManager().getIssueById(selectedIssue).getSubject());
-                } catch (RedmineException ex) {
+                    tiDialog.setContentText("Введите действительные трудозатраты по задаче: \n"+String.valueOf(selectedIssue));
+                } catch (Exception ex) {
                     Logger.getLogger(RM_1.class.getName()).log(Level.SEVERE, null, ex);
                 }
                 tiDialog.setWidth(600);
@@ -2954,40 +3271,41 @@ private static String readFile(String path, Charset encoding)
                 result.ifPresent(name -> {
                     if(!name.trim().isEmpty())
                     {
-                        if(useDeferHost)
-                        sendAction(String.valueOf(markedIssue),"Пауза");
+//                        if(useDeferHost)
+                        sendAction(String.valueOf(markedIssue),markedIssueName,"Пауза");
                         //change image in tray
-                        BufferedImage trayImage = SwingFXUtils.fromFXImage(stopImage24,null);             
-                        trayIcon.setImage(trayImage);
+                        issueIdSpentHours=selectedIssue;
+                        addExtraSpentHours(name);
+                                for (int i = 0; i < table.getItems().size(); i++) {
+                                       if (Integer.valueOf(table.getItems().get(i).getIdCol()) == selectedIssue) {   
+                                           
+                                           Float spentHoursBefore;
+                                           if(!rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).getSpentHoursCol().toString().equals("Новая")){
+                                            spentHoursBefore= Float.parseFloat(convertMinutesToSpentHours(rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).getSpentHoursCol()));
+                                             System.out.println(String.valueOf(spentHoursBefore));
+                                           }
+                                            else 
+                                           {
+                                               spentHoursBefore=Float.parseFloat("0");                                           
+                                           }
+                                           String spentHoursStringBuf=convertSpentHours(String.valueOf(Float.parseFloat(convertMinutesToSpentHours(name))+spentHoursBefore));
+                                            spentHoursMap.replace(selectedIssue,spentHoursStringBuf);
+                                           rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()).get(i).setSpentHoursCol(spentHoursStringBuf);
+                                            
+                                           priorityIdCol.setSortType(TableColumn.SortType.DESCENDING);                                   
+                                           table.setItems(rowIssueList.get(tabs.getSelectionModel().getSelectedIndex()));
+                                           table.getSortOrder().add(priorityIdCol);
+                                           break;
+                                       }
+                                   }           
+                       
                         //останавливаем задачу и записываем трудозатраты введенные пользователем
                        //stop timer
                       workTimer.cancel();
                       timeStartInWork=0;
                       markedIssue="";
                       
-                      float timeEntryBuf=Float.parseFloat(convertMinutesToSpentHours(name));
-                      if(timeEntryBuf>0){
-                      TimeEntry TE=new TimeEntry(); 
-                      TE.setHours(timeEntryBuf);
-                      TE.setIssueId(selectedIssue);
-                      TE.setActivityId(ID_ACTIVITY_ENGINEERING); 
-                                try {
-                                     mgr.getTimeEntryManager().createTimeEntry(TE);
-                                    
-                                     String spentHoursStringBuf=mgr.getIssueManager().getIssueById(selectedIssue).getSpentHours().toString();
-                                    spentHoursMap.replace(selectedIssue,convertSpentHours(spentHoursStringBuf));
-                                    setTableIssues();
-                                  
-                                    
-                                    } catch (RedmineException ex) {
-                                        alert.setTitle("Внимание");
-                                        alert.setHeaderText(null);
-                                        alert.setContentText("Трудозатраты не удалось сохранить! Задача: " +selectedIssue+" Трудозатраты: "+TE.getHours());
-                                        alert.showAndWait();
-                                        LOG.addHandler(handler);
-                                        LOG.log(Level.SEVERE, null, ex);
-                                    }
-                      }
+                      
                       updateTableIssues();
                         //update timer
                       workTimer = new Timer();
@@ -2996,11 +3314,15 @@ private static String readFile(String path, Charset encoding)
                       startButton.setGraphic(new ImageView(startImage));
                       startButton.setTooltip(new Tooltip("Запустить задачу"));
                        
+                      BufferedImage trayImage = SwingFXUtils.fromFXImage(startImage24,null);             
+                      trayIcon.setImage(trayImage);
                     
                       //select issue which selected now
                       try{
-                          if(table.getSelectionModel().getSelectedItem()!=null)
-                          selectedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+                          if(table.getSelectionModel().getSelectedItem()!=null){
+                            selectedIssue=Integer.parseInt(table.getSelectionModel().getSelectedItem().getIdCol());
+                            selectedIssueName=table.getSelectionModel().getSelectedItem().getThemeCol();
+                          }
                       }catch(NumberFormatException ex){
                           selectedIssue=0;
                       }
@@ -3095,20 +3417,7 @@ private static String readFile(String path, Charset encoding)
                 tabs.getSelectionModel().select(tab);
       
             });
-        //timer for sending status online
-//        try{
-//              onlineTimer = new Timer();
-//              onlineTimer.schedule(new TimerTask() {
-//                          @Override
-//                          public void run() {
-//                              sendOnline();
-//                                            System.out.println("Онлайн!");
-//                          }
-//                      }, 5_000, 900_000);
-//                      } catch(Exception ex){
-//                        LOG.addHandler(handler);
-//                        LOG.log(Level.SEVERE, null, ex);
-//         }
+
     //поток для обработки перехода на новую вкладку
     class tabClick extends Thread
     {   
@@ -3201,5 +3510,5 @@ private static String readFile(String path, Charset encoding)
     public static void main(String[] args) {
         launch(args);
     }
-    
+
 }
